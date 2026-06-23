@@ -1,6 +1,6 @@
 # Muyang-Tools-Frontend
 
-正式 Muyang 工具网页前端，部署目标为 `cmuyang23333.top`。
+正式 Muyang 工具网页前端，首个公开入口为 `cmuyang23333.top/live-sticker/`。
 
 ## 第一阶段
 
@@ -16,3 +16,7 @@ npm run dev
 ```
 
 复制 `.env.example` 为 `.env.local` 后再配置 Core 地址。
+
+## 部署
+
+线上子页面的构建与切换步骤见 [docs/deploy-live-sticker.md](docs/deploy-live-sticker.md)。

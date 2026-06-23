@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:live-sticker": "VITE_DEPLOY_BASE=/live-sticker/ npm run build",
     "preview": "vite preview"
   },
   "dependencies": {
