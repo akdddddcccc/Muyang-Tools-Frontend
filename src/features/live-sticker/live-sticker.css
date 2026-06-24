@@ -46,6 +46,7 @@
 .tool-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .asset-upload { display: flex; flex-direction: column; min-height: 180px; padding: 18px; border: 1px dashed #4b6670; border-radius: 7px; background: #101a20; cursor: pointer; }
 .asset-upload:hover { border-color: #7bf89c; background: #102217; }
+.asset-upload.paste-ready, .font-preset-card.paste-ready { border-color: #7bf89c; background: #102217; box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .22); }
 .asset-upload.disabled { cursor: wait; opacity: .6; }
 .asset-upload > span { color: #edf4ef; font-size: 14px; font-weight: 650; }
 .asset-upload small { margin-top: 7px; color: #89a195; font-size: 12px; line-height: 1.55; }
@@ -65,9 +66,11 @@
 .font-preset-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .font-preset-card { display: grid; grid-template-rows: 84px auto 1fr; gap: 8px; min-height: 160px; padding: 9px; color: #aabbb0; text-align: left; background: #111a21; border: 1px solid #2d3a43; border-radius: 7px; cursor: pointer; }
 .font-preset-card:hover, .font-preset-card.selected { color: #effff2; border-color: #7bf89c; background: #14261b; }
+.font-preset-card.disabled { cursor: wait; opacity: .6; }
 .font-preset-card img { width: 100%; height: 84px; object-fit: cover; border-radius: 4px; }
 .font-preset-card strong { font-size: 13px; }
 .font-preset-card small { color: inherit; font-size: 10px; line-height: 1.45; }
+.font-preset-card input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .custom-font-mark { display: grid; place-items: center; color: #7bf89c; border: 1px dashed #4b6670; border-radius: 4px; font: 32px Georgia, serif; }
 .upload-matrix { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .composition-workbench { display: grid; grid-template-columns: minmax(260px, 1fr) 250px; gap: 16px; margin-top: 20px; }

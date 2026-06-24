@@ -247,14 +247,21 @@ function TypographyTool({ assets, onAddAsset, projectReady, typography, onTypogr
 
   return (
     <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title="文字图层" detail="该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。">
-      <div className="tool-grid two">
+      <div className="tool-grid">
         <AssetUpload kind="reference" label="上传色彩纹理参考" help="最新上传的参考会优先于项目上贴。" onAddAsset={onAddAsset} disabled={!projectReady} />
-        <AssetUpload kind="font-reference" label="上传字体参考" help="第一期仅保存一个主字体参考，后续服务端会去色处理。" onAddAsset={onAddAsset} disabled={!projectReady} />
       </div>
       <section className="font-preset-section" aria-label="默认生图字体">
         <div className="section-heading"><p>默认生图字体</p><small>这些参考图只约束字形与笔画节奏；色彩、材质与装饰仍以当前上贴或色彩纹理参考为准。</small></div>
         <div className="font-preset-grid">
-          {fontPresets.map((preset) => (
+          {fontPresets.map((preset) => preset.key === "custom-reference" ? (
+            <CustomFontReferenceCard
+              key={preset.key}
+              selected={typography.fontPresetKey === preset.key}
+              disabled={!projectReady}
+              onAddAsset={onAddAsset}
+              onActivate={() => onTypographyChange({ fontPresetKey: preset.key })}
+            />
+          ) : (
             <button className={typography.fontPresetKey === preset.key ? "font-preset-card selected" : "font-preset-card"} key={preset.key} onClick={() => onTypographyChange({ fontPresetKey: preset.key })}>
               {preset.image ? <img src={preset.image} alt="" /> : <span className="custom-font-mark">Aa</span>}
               <strong>{preset.label}</strong>
@@ -659,27 +666,83 @@ function ToolFrame({ eyebrow, title, detail, children }: { eyebrow: string; titl
   return <div className="tool-panel"><p className="panel-eyebrow">{eyebrow}</p><h2>{title}</h2><p className="panel-detail">{detail}</p>{children}</div>;
 }
 
-function AssetUpload({ kind, label, help, onAddAsset, compact = false, disabled = false }: { kind: ProjectAssetKind; label: string; help: string; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean }) {
+function useImagePasteUpload({ kind, onAddAsset, disabled, onActivate }: { kind: ProjectAssetKind; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean; onActivate?: () => void }) {
   const [message, setMessage] = useState("");
-  const onChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const [isPasteTarget, setIsPasteTarget] = useState(false);
+
+  const addFile = useCallback(async (file: File) => {
+    if (disabled) return;
+    onActivate?.();
     try {
       const asset = await onAddAsset(file, kind);
       setMessage(asset.trimmed ? `已预剪裁：${file.name}` : `已添加：${file.name}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "无法添加该素材。");
-    } finally {
-      event.target.value = "";
     }
+  }, [disabled, kind, onActivate, onAddAsset]);
+
+  const onChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) await addFile(file);
+    event.target.value = "";
   };
 
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (!isPasteTarget || disabled) return;
+      const imageItem = Array.from(event.clipboardData?.items ?? []).find((item) => item.type.startsWith("image/"));
+      const file = imageItem?.getAsFile();
+      if (!file) return;
+      event.preventDefault();
+      void addFile(file);
+    };
+
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [addFile, disabled, isPasteTarget]);
+
+  return {
+    message,
+    onChange,
+    onPointerEnter: () => setIsPasteTarget(true),
+    onPointerLeave: () => setIsPasteTarget(false),
+    isPasteTarget,
+  };
+}
+
+function AssetUpload({ kind, label, help, onAddAsset, compact = false, disabled = false }: { kind: ProjectAssetKind; label: string; help: string; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean }) {
+  const upload = useImagePasteUpload({ kind, onAddAsset, disabled });
+
   return (
-    <label className={`${compact ? "asset-upload compact" : "asset-upload"}${disabled ? " disabled" : ""}`}>
+    <label
+      className={`${compact ? "asset-upload compact" : "asset-upload"}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
+      title="悬停后可按 Ctrl / Cmd + V 粘贴图片"
+      onPointerEnter={upload.onPointerEnter}
+      onPointerLeave={upload.onPointerLeave}
+    >
       <span>{label}</span>
       <small>{help}</small>
-      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={onChange} disabled={disabled} />
-      <strong>{message || (disabled ? "正在恢复项目" : "选择图片")}</strong>
+      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
+      <strong>{upload.message || (disabled ? "正在恢复项目" : "选择图片")}</strong>
+    </label>
+  );
+}
+
+function CustomFontReferenceCard({ selected, disabled, onAddAsset, onActivate }: { selected: boolean; disabled: boolean; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onActivate: () => void }) {
+  const upload = useImagePasteUpload({ kind: "font-reference", onAddAsset, disabled, onActivate });
+
+  return (
+    <label
+      className={`font-preset-card custom-font-preset${selected ? " selected" : ""}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
+      title="点击选择字体参考，或悬停后按 Ctrl / Cmd + V 粘贴图片"
+      onClick={onActivate}
+      onPointerEnter={upload.onPointerEnter}
+      onPointerLeave={upload.onPointerLeave}
+    >
+      <span className="custom-font-mark">Aa</span>
+      <strong>自定义参考</strong>
+      <small>{upload.message || "上传自己的字体字形参考"}</small>
+      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
     </label>
   );
 }
