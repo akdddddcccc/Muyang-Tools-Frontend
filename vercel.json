@@ -1,0 +1,18 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build:live-sticker",
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/live-sticker/",
+      "permanent": false
+    },
+    {
+      "source": "/live-sticker",
+      "destination": "/live-sticker/",
+      "permanent": true
+    }
+  ]
+}

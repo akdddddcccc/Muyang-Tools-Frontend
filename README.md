@@ -6,7 +6,7 @@
 
 - React + Vite 工作台壳
 - 直播贴片的背景生成、文字图层、效果融合、导出资产四个独立工作区
-- 通过 `CORE_API_BASE_URL` 连接正式 Core；浏览器不保存或使用模型 Provider 密钥
+- 通过 `VITE_CORE_API_BASE_URL` 连接正式 Core；浏览器不保存或使用模型 Provider 密钥
 
 ## 本地运行
 
