@@ -27,11 +27,11 @@ type FlowAssetNodeData = {
   onSelectAsset?: (assetId: string) => void;
 };
 
-const tools: Array<{ id: ToolId; step: string; label: string; caption: string }> = [
-  { id: "background", step: "01", label: "背景生成", caption: "上贴 / 下贴 / 侧贴" },
-  { id: "typography", step: "02", label: "文字图层", caption: "透明文字素材" },
-  { id: "composition", step: "03", label: "效果融合", caption: "画板与遮罩" },
-  { id: "exports", step: "04", label: "导出资产", caption: "选择与打包" },
+const tools: Array<{ id: ToolId; step: string; label: string; caption: string; englishLabel: string; englishCaption: string }> = [
+  { id: "background", step: "01", label: "背景生成", caption: "上贴 / 下贴 / 侧贴", englishLabel: "Background", englishCaption: "Top / Bottom / Side" },
+  { id: "typography", step: "02", label: "文字图层", caption: "透明文字素材", englishLabel: "Typography", englishCaption: "Transparent text" },
+  { id: "composition", step: "03", label: "效果融合", caption: "画板与遮罩", englishLabel: "Composition", englishCaption: "Canvas & mask" },
+  { id: "exports", step: "04", label: "导出资产", caption: "选择与打包", englishLabel: "Exports", englishCaption: "Select & package" },
 ];
 
 const publicAssetUrl = (path: string) => `${import.meta.env.BASE_URL}assets/${path}`;
@@ -73,6 +73,7 @@ export function LiveStickerWorkspace({
   const [healthState, setHealthState] = useState<HealthState>("checking");
   const [health, setHealth] = useState<CoreHealth | null>(null);
   const [healthMessage, setHealthMessage] = useState("正在检查 Core 连接");
+  const isEnglish = language === "en";
 
   const checkHealth = useCallback(async () => {
     setHealthState("checking");
@@ -100,7 +101,7 @@ export function LiveStickerWorkspace({
           <img className="brand-mark" src={publicAssetUrl("tool-icon.svg")} alt="MUYANG 工具" />
           <div>
             <p>MUYANG x NOBOOK</p>
-            <h1>AI 直播贴片工作台</h1>
+            <h1>{isEnglish ? "AI Live Sticker Studio" : "AI 直播贴片工作台"}</h1>
           </div>
         </div>
         <div className="header-controls">
@@ -109,7 +110,7 @@ export function LiveStickerWorkspace({
             {healthMessage}
           </div>
           <button className="health-refresh" onClick={() => void checkHealth()} disabled={healthState === "checking"}>
-            重新检查
+            {isEnglish ? "Retry" : "重新检查"}
           </button>
           <div className="language-switcher" aria-label="Language">
             <button className={language === "zh" ? "selected" : ""} onClick={() => onLanguageChange("zh")}>中文</button>
@@ -120,7 +121,7 @@ export function LiveStickerWorkspace({
 
       <div className="workspace-body">
         <aside className="tool-sidebar" aria-label="工具导航">
-          <p className="sidebar-label">工具箱</p>
+          <p className="sidebar-label">{isEnglish ? "TOOLBOX" : "工具箱"}</p>
           {tools.map((tool) => (
             <button
               className={activeTool === tool.id ? "tool-nav active" : "tool-nav"}
@@ -128,13 +129,13 @@ export function LiveStickerWorkspace({
               onClick={() => setActiveTool(tool.id)}
             >
               <span>{tool.step}</span>
-              <strong>{tool.label}</strong>
-              <small>{tool.caption}</small>
+              <strong>{isEnglish ? tool.englishLabel : tool.label}</strong>
+              <small>{isEnglish ? tool.englishCaption : tool.caption}</small>
             </button>
           ))}
           <div className="sidebar-note">
-            <span>当前项目资产</span>
-            <p>{assets.length} 个本地素材。{persistenceCopy(persistenceState)}</p>
+            <span>{isEnglish ? "PROJECT ASSETS" : "当前项目资产"}</span>
+            <p>{assets.length} {isEnglish ? "local assets. " : "个本地素材。"}{isEnglish ? persistenceCopyEn(persistenceState) : persistenceCopy(persistenceState)}</p>
           </div>
         </aside>
 
@@ -158,6 +159,7 @@ export function LiveStickerWorkspace({
             onRedo={redoComposition}
             onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
             health={health}
+            language={language}
           />
         </section>
       </div>
@@ -208,6 +210,7 @@ function ToolPanel({
   onRedo,
   onTypographyChange,
   health,
+  language,
 }: {
   activeTool: ToolId;
   assets: ProjectAsset[];
@@ -226,6 +229,7 @@ function ToolPanel({
   onRedo: () => void;
   onTypographyChange: (settings: Partial<TypographySettings>) => void;
   health: CoreHealth | null;
+  language: "zh" | "en";
 }) {
   if (activeTool === "background") {
     return <BackgroundTool assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} />;
@@ -234,7 +238,7 @@ function ToolPanel({
     return <TypographyTool assets={assets} onAddAsset={onAddAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
   }
   if (activeTool === "composition") {
-    return <CompositionTool assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
+    return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
   }
   return <ExportTool assets={assets} />;
 }
@@ -254,51 +258,71 @@ function BackgroundTool({ assets, onAddAsset, health, projectReady }: ToolProps 
 function TypographyTool({ assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
   const customColorReference = latestAsset(assets, "reference");
-  const layoutReference = latestAsset(assets, "layout-reference");
   const activeColorReference = customColorReference ?? topAsset;
+  const isRefineMode = typography.mode === "refine";
 
   return (
-    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title="文字图层" detail="该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。">
-      <div className="tool-grid two typography-input-grid">
-        <TypographyContentInput
-          value={typography.text}
-          onTextChange={(text) => onTypographyChange({ text })}
-          onAddAsset={onAddAsset}
-          disabled={!projectReady}
-        />
-        <AssetUpload kind="reference" label="文字颜色与质感参考" help="上传后覆盖上贴；未上传时自动继承当前项目上贴。" onAddAsset={onAddAsset} disabled={!projectReady} />
+    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title="文字图层" detail={isRefineMode ? "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格。输出为纯白或纯黑底稿，供后续抠图。" : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。"}>
+      <div className="typography-mode-switch" role="tablist" aria-label="文字图层模式">
+        <button type="button" role="tab" aria-selected={!isRefineMode} className={!isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "create" })}>新建文字图层</button>
+        <button type="button" role="tab" aria-selected={isRefineMode} className={isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "refine" })}>微调已有文字层</button>
       </div>
-      <section className="font-preset-section" aria-label="默认生图字体">
-        <div className="section-heading"><p>默认生图字体</p><small>这些参考图只约束字形与笔画节奏；色彩、材质与装饰仍以当前上贴或色彩纹理参考为准。</small></div>
-        <div className="font-preset-grid">
-          {fontPresets.map((preset) => preset.key === "custom-reference" ? (
-            <CustomFontReferenceCard
-              key={preset.key}
-              selected={typography.fontPresetKey === preset.key}
-              disabled={!projectReady}
-              onAddAsset={onAddAsset}
-              onActivate={() => onTypographyChange({ fontPresetKey: preset.key })}
-            />
-          ) : (
-            <button className={typography.fontPresetKey === preset.key ? "font-preset-card selected" : "font-preset-card"} key={preset.key} onClick={() => onTypographyChange({ fontPresetKey: preset.key })}>
-              {preset.image ? <img src={preset.image} alt="" /> : <span className="custom-font-mark">Aa</span>}
-              <strong>{preset.label}</strong>
-              <small>{preset.detail}</small>
-            </button>
-          ))}
-        </div>
-      </section>
+      {isRefineMode ? (
+        <>
+          <div className="tool-grid typography-refine-grid">
+            <TypographyContentInput value={typography.text} onTextChange={(text) => onTypographyChange({ text })} disabled={!projectReady} />
+            <AssetUpload kind="typography" label="已有文字图层" help="上传透明或实底文字图；它会学习字形、字体、颜色与纹理。" onAddAsset={onAddAsset} disabled={!projectReady} />
+            <AssetUpload kind="reference" label="颜色与质感覆盖参考" help="非必填；上传后优先采用此图的颜色、材质与装饰。" onAddAsset={onAddAsset} disabled={!projectReady} />
+          </div>
+          <div className="typography-matte-row">
+            <div><strong>生成底稿</strong><small>输出为实底文字图，便于下一步自动抠图。</small></div>
+            <div className="matte-switcher" role="radiogroup" aria-label="生成底稿背景">
+              <button type="button" role="radio" aria-checked={typography.matte === "white"} className={typography.matte === "white" ? "selected" : ""} onClick={() => onTypographyChange({ matte: "white" })}>纯白底</button>
+              <button type="button" role="radio" aria-checked={typography.matte === "black"} className={typography.matte === "black" ? "selected" : ""} onClick={() => onTypographyChange({ matte: "black" })}>纯黑底</button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="tool-grid two typography-input-grid">
+            <TypographyContentInput value={typography.text} onTextChange={(text) => onTypographyChange({ text })} onAddAsset={onAddAsset} disabled={!projectReady} allowLayoutReference />
+            <AssetUpload kind="reference" label="文字颜色与质感参考" help="上传后覆盖上贴；未上传时自动继承当前项目上贴。" onAddAsset={onAddAsset} disabled={!projectReady} />
+          </div>
+          <TypographyInstructionInput value={typography.instruction} onChange={(instruction) => onTypographyChange({ instruction })} disabled={!projectReady} />
+          <section className="font-preset-section" aria-label="默认生图字体">
+            <div className="section-heading"><p>默认生图字体</p><small>这些参考图只约束字形与笔画节奏；色彩、材质与装饰仍以当前上贴或色彩纹理参考为准。</small></div>
+            <div className="font-preset-grid">
+              {fontPresets.map((preset) => preset.key === "custom-reference" ? (
+                <CustomFontReferenceCard
+                  key={preset.key}
+                  selected={typography.fontPresetKey === preset.key}
+                  disabled={!projectReady}
+                  onAddAsset={onAddAsset}
+                  onActivate={() => onTypographyChange({ fontPresetKey: preset.key })}
+                />
+              ) : (
+                <button className={typography.fontPresetKey === preset.key ? "font-preset-card selected" : "font-preset-card"} key={preset.key} onClick={() => onTypographyChange({ fontPresetKey: preset.key })}>
+                  {preset.image ? <img src={preset.image} alt="" /> : <span className="custom-font-mark">Aa</span>}
+                  <strong>{preset.label}</strong>
+                  <small>{preset.detail}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
       <StatusCard
         title="当前色彩参考"
         value={activeColorReference ? `${assetKindLabels[activeColorReference.kind]} · ${activeColorReference.fileName}` : "尚未选择"}
-        detail={activeColorReference ? "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。" : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。"}
+        detail={isRefineMode ? (activeColorReference ? "上传的颜色质感参考优先；未上传时沿用已有文字图层的颜色、纹理与字体。" : "未上传覆盖参考时，系统只沿用已有文字图层的字形、颜色和纹理。") : (activeColorReference ? "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。" : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。")}
       />
-      <AssetCollection assets={assets.filter((asset) => asset.kind === "layout-reference" || asset.kind === "font-reference")} empty="输入文本即可生成；也可以上传布局文本图或字体参考。" />
+      <AssetCollection assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? "上传一张已有文字图层后，可按新的文本内容微调。" : "输入文本即可生成；也可以上传布局文本图或字体参考。"} />
     </ToolFrame>
   );
 }
 
 function CompositionTool({
+  language,
   assets,
   composition,
   onAddAsset,
@@ -313,6 +337,7 @@ function CompositionTool({
   canRedo,
   projectReady,
 }: ToolProps & {
+  language: "zh" | "en";
   composition: CompositionDocument;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, patch: Partial<Pick<CompositionLayer, "x" | "y" | "width" | "height" | "opacity" | "visible" | "mask">>) => void;
@@ -331,23 +356,24 @@ function CompositionTool({
     .filter((item): item is { layer: CompositionLayer; asset: ProjectAsset } => Boolean(item.asset));
   const selectedLayer = canvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? canvasLayers.at(-1)?.layer;
 
+  const isEnglish = language === "en";
   return (
-    <ToolFrame eyebrow="03 / COMPOSITION BOARD" title="效果融合" detail="素材节点会自动继承前面工具的最新结果，也可在节点内替换。所有输入始终吸附到融合输出，画板继续用于精细位置、尺寸与遮罩调整。">
-      <CompositionFlow assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
+    <ToolFrame eyebrow="03 / COMPOSITION BOARD" title={isEnglish ? "Composition" : "效果融合"} detail={isEnglish ? "Input nodes inherit the latest upstream assets and remain magnetically attached to the output. Use the canvas for precise placement, scale and boundary fading." : "素材节点会自动继承前面工具的最新结果，也可在节点内替换。所有输入始终吸附到融合输出，画板继续用于精细位置、尺寸与遮罩调整。"}>
+      <CompositionFlow language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
       <div className="composition-workbench">
         <div className="composition-stage-wrap">
           <div className="composition-toolbar">
-            <div className="canvas-mode-switch" aria-label="画板模式">
-              <button className={mode === "select" ? "selected" : ""} onClick={() => setMode("select")}>选择图层</button>
-              <button className={mode === "mask" ? "selected" : ""} onClick={() => setMode("mask")}>手绘渐隐</button>
+            <div className="canvas-mode-switch" aria-label={isEnglish ? "Canvas mode" : "画板模式"}>
+              <button className={mode === "select" ? "selected" : ""} onClick={() => setMode("select")}>{isEnglish ? "Select" : "选择图层"}</button>
+              <button className={mode === "mask" ? "selected" : ""} onClick={() => setMode("mask")}>{isEnglish ? "Fade draw" : "手绘渐隐"}</button>
             </div>
             <div className="history-controls">
               <button aria-label="撤销画板操作" title="撤销" disabled={!canUndo} onClick={onUndo}>↶</button>
               <button aria-label="恢复画板操作" title="恢复" disabled={!canRedo} onClick={onRedo}>↷</button>
             </div>
           </div>
-          <CompositionCanvas layers={canvasLayers} selectedLayer={selectedLayer} mode={mode} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
-          <p className="stage-note">{mode === "mask" ? "手绘模式：在上贴或下贴区域画渐隐边界线。上贴保留线以上，下贴保留线以下；按住 Shift 可画水平直线。" : "拖动图层可移动；拖右下角控制点可缩放。默认羽化和手绘渐隐都会保存到同一项目文档。"}</p>
+          <CompositionCanvas language={language} layers={canvasLayers} selectedLayer={selectedLayer} mode={mode} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
+          <p className="stage-note">{mode === "mask" ? (isEnglish ? "Fade draw: draw a boundary within top or bottom sticker. The top retains above the line, bottom retains below. Hold Shift for a straight horizontal line." : "手绘模式：在上贴或下贴区域画渐隐边界线。上贴保留线以上，下贴保留线以下；按住 Shift 可画水平直线。") : (isEnglish ? "Drag layers to move; use the lower-right handle to scale. Default feather and hand-drawn fades persist in the same project." : "拖动图层可移动；拖右下角控制点可缩放。默认羽化和手绘渐隐都会保存到同一项目文档。")}</p>
         </div>
         <CompositionInspector layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={canvasLayers} />
       </div>
@@ -358,14 +384,14 @@ function CompositionTool({
 const compositionNodeTypes = { asset: FlowAssetNode, output: FlowOutputNode };
 const compositionEdgeTypes = { octopus: OctopusEdge };
 
-function CompositionFlow({ assets, composition, onAddAsset, onSelectLayer, projectReady }: { assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
+function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLayer, projectReady }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
   const [nodes, setNodes, onNodesChange] = useNodesState([
     { id: "base-image", type: "asset", position: { x: 24, y: 38 }, data: { kind: "base-image", label: "直播间底图" } },
     { id: "top", type: "asset", position: { x: 190, y: 38 }, data: { kind: "top", label: "上贴" } },
     { id: "side", type: "asset", position: { x: 356, y: 38 }, data: { kind: "side", label: "侧贴" } },
     { id: "bottom", type: "asset", position: { x: 522, y: 38 }, data: { kind: "bottom", label: "下贴" } },
     { id: "typography", type: "asset", position: { x: 688, y: 38 }, data: { kind: "typography", label: "文字图层" } },
-    { id: "merge-output", type: "output", position: { x: 354, y: 216 }, data: {} },
+    { id: "merge-output", type: "output", position: { x: 354, y: 216 }, data: { label: "融合输出", detail: "拖入画板继续微调" } },
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([
     "base-image", "top", "side", "bottom", "typography",
@@ -378,12 +404,12 @@ function CompositionFlow({ assets, composition, onAddAsset, onSelectLayer, proje
 
   useEffect(() => {
     setNodes((current) => current.map((node) => {
-      if (node.id === "merge-output") return node;
+      if (node.id === "merge-output") return { ...node, data: { label: language === "en" ? "Merged output" : "融合输出", detail: language === "en" ? "Continue on canvas" : "拖入画板继续微调" } };
       const data = node.data as FlowAssetNodeData;
       const asset = [...assets].reverse().find((item) => item.kind === data.kind);
-      return { ...node, data: { ...data, asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset } };
+      return { ...node, data: { ...data, label: flowNodeLabel(data.kind, language), asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset } };
     }));
-  }, [assets, onAddAsset, projectReady, selectAsset, setNodes]);
+  }, [assets, language, onAddAsset, projectReady, selectAsset, setNodes]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (connection.target !== "merge-output") return;
@@ -449,14 +475,20 @@ function FlowAssetNode({ data }: NodeProps) {
   );
 }
 
-function FlowOutputNode() {
+function FlowOutputNode({ data }: NodeProps) {
+  const output = data as { label?: string; detail?: string };
   return (
     <div className="flow-output-node">
       <Handle className="flow-handle target" type="target" position={Position.Top} id="input" />
-      <span>融合输出</span>
-      <small>拖入画板继续微调</small>
+      <span>{output.label ?? "融合输出"}</span>
+      <small>{output.detail ?? "拖入画板继续微调"}</small>
     </div>
   );
+}
+
+function flowNodeLabel(kind: CompositionInputKind, language: "zh" | "en") {
+  if (language === "zh") return assetKindLabels[kind];
+  return { "base-image": "Room background", top: "Top sticker", bottom: "Bottom sticker", side: "Side sticker", typography: "Typography" }[kind];
 }
 
 function OctopusEdge({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, style }: EdgeProps) {
@@ -465,6 +497,7 @@ function OctopusEdge({ sourceX, sourceY, sourcePosition, targetX, targetY, targe
 }
 
 function CompositionCanvas({
+  language,
   layers,
   selectedLayer,
   mode,
@@ -474,6 +507,7 @@ function CompositionCanvas({
   onBeginInteraction,
   onEndInteraction,
 }: {
+  language: "zh" | "en";
   layers: Array<{ layer: CompositionLayer; asset: ProjectAsset }>;
   selectedLayer?: CompositionLayer;
   mode: "select" | "mask";
@@ -592,8 +626,8 @@ function CompositionCanvas({
   };
 
   return (
-    <div className="composition-stage" ref={stageRef} aria-label="融合画板">
-      {layers.length === 0 ? <p>导入底图或贴片素材后，图层会出现在这里。</p> : layers.map(({ layer, asset }) => (
+    <div className="composition-stage" ref={stageRef} aria-label={language === "en" ? "Composition canvas" : "融合画板"}>
+      {layers.length === 0 ? <p>{language === "en" ? "Import a room background or sticker asset to place it here." : "导入底图或贴片素材后，图层会出现在这里。"}</p> : layers.map(({ layer, asset }) => (
         <div
           className={layer.id === selectedLayer?.id ? "canvas-layer selected" : "canvas-layer"}
           key={layer.id}
@@ -605,17 +639,17 @@ function CompositionCanvas({
             left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, opacity: layer.opacity / 100,
             zIndex: layer.zIndex, visibility: layer.visible ? "visible" : "hidden", ...maskStyle(layer),
           }}
-          title={`${assetKindLabels[layer.kind]} · ${asset.fileName}`}
+          title={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} · ${asset.fileName}`}
           role="button"
           tabIndex={0}
-          aria-label={`${assetKindLabels[layer.kind]} 图层`}
+          aria-label={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} ${language === "en" ? "layer" : "图层"}`}
         >
-          <img src={asset.previewUrl} alt={assetKindLabels[layer.kind]} draggable={false} />
-          <span>{assetKindLabels[layer.kind]}</span>
-          {layer.id === selectedLayer?.id && mode === "select" ? <i className="resize-handle" onPointerDown={(event) => onResizeDown(event, layer)} title="拖动缩放" /> : null}
+          <img src={asset.previewUrl} alt={language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} draggable={false} />
+          <span>{language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]}</span>
+          {layer.id === selectedLayer?.id && mode === "select" ? <i className="resize-handle" onPointerDown={(event) => onResizeDown(event, layer)} title={language === "en" ? "Drag to resize" : "拖动缩放"} /> : null}
         </div>
       ))}
-      {mode === "mask" ? <div className="fade-drawing-overlay" title="在上贴或下贴区域画渐隐线，按住 Shift 可画水平直线" onPointerDown={onFadeStart} onPointerMove={onFadeMove} onPointerUp={onFadeEnd} onPointerCancel={onFadeEnd}>{previewPath.length > 1 ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={pointsToSvgPath(previewPath)} /></svg> : null}</div> : null}
+      {mode === "mask" ? <div className="fade-drawing-overlay" title={language === "en" ? "Draw on a top or bottom sticker. Hold Shift for a horizontal line." : "在上贴或下贴区域画渐隐线，按住 Shift 可画水平直线"} onPointerDown={onFadeStart} onPointerMove={onFadeMove} onPointerUp={onFadeEnd} onPointerCancel={onFadeEnd}>{previewPath.length > 1 ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={pointsToSvgPath(previewPath)} /></svg> : null}</div> : null}
     </div>
   );
 }
@@ -674,14 +708,17 @@ function LayerRange({ label, value, min = 0, max = 100, onChange, onBegin, onEnd
 function maskStyle(layer: CompositionLayer) {
   if (typeof document === "undefined") return {};
   if (layer.kind !== "top" && layer.kind !== "bottom") return {};
-  const canvas = document.createElement("canvas");
-  canvas.width = 480;
-  canvas.height = 480;
-  const context = canvas.getContext("2d");
+  const size = 480;
+  const blur = Math.max(2, (size * layer.mask.feather) / 600);
+  const padding = Math.ceil(blur * 4);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = size + padding * 2;
+  sourceCanvas.height = size + padding * 2;
+  const context = sourceCanvas.getContext("2d");
   if (!context) return {};
 
-  const width = canvas.width;
-  const height = canvas.height;
+  const width = size;
+  const height = size;
   const fallbackY = layer.kind === "top"
     ? layer.y + layer.height * 0.72
     : layer.y + layer.height * 0.28;
@@ -691,28 +728,32 @@ function maskStyle(layer: CompositionLayer) {
     x: ((point.x - layer.x) / layer.width) * width,
     y: ((point.y - layer.y) / layer.height) * height,
   }));
-  const blur = Math.max(2, (Math.min(width, height) * layer.mask.feather) / 600);
   context.save();
+  context.translate(padding, padding);
   context.filter = `blur(${blur}px)`;
   context.fillStyle = "#ffffff";
   context.beginPath();
   if (layer.kind === "top") {
-    context.moveTo(0, -blur * 2);
-    context.lineTo(width, -blur * 2);
-    context.lineTo(width, localPoints.at(-1)?.y ?? height * 0.72);
+    context.moveTo(-padding, -padding);
+    context.lineTo(width + padding, -padding);
+    context.lineTo(width + padding, localPoints.at(-1)?.y ?? height * 0.72);
     [...localPoints].reverse().forEach((point) => context.lineTo(point.x, point.y));
-    context.lineTo(0, localPoints[0]?.y ?? height * 0.72);
+    context.lineTo(-padding, localPoints[0]?.y ?? height * 0.72);
   } else {
-    context.moveTo(0, localPoints[0]?.y ?? height * 0.28);
+    context.moveTo(-padding, localPoints[0]?.y ?? height * 0.28);
     localPoints.forEach((point) => context.lineTo(point.x, point.y));
-    context.lineTo(width, localPoints.at(-1)?.y ?? height * 0.28);
-    context.lineTo(width, height + blur * 2);
-    context.lineTo(0, height + blur * 2);
+    context.lineTo(width + padding, localPoints.at(-1)?.y ?? height * 0.28);
+    context.lineTo(width + padding, height + padding);
+    context.lineTo(-padding, height + padding);
   }
   context.closePath();
   context.fill();
   context.restore();
 
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  canvas.getContext("2d")?.drawImage(sourceCanvas, padding, padding, size, size, 0, 0, size, size);
   const image = `url("${canvas.toDataURL("image/png")}")`;
   return { maskImage: image, WebkitMaskImage: image, maskSize: "100% 100%", WebkitMaskSize: "100% 100%" };
 }
@@ -843,16 +884,17 @@ function AssetUpload({ kind, label, help, onAddAsset, compact = false, disabled 
   );
 }
 
-function TypographyContentInput({ value, onTextChange, onAddAsset, disabled }: { value: string; onTextChange: (text: string) => void; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean }) {
+function TypographyContentInput({ value, onTextChange, onAddAsset, disabled, allowLayoutReference = false }: { value: string; onTextChange: (text: string) => void; onAddAsset?: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean; allowLayoutReference?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const upload = useImagePasteUpload({ kind: "layout-reference", onAddAsset, disabled });
+  const unavailableUpload = useCallback(async () => { throw new Error("当前输入框不接收图片。 "); }, []);
+  const upload = useImagePasteUpload({ kind: "layout-reference", onAddAsset: onAddAsset ?? unavailableUpload, disabled: disabled || !allowLayoutReference });
 
   return (
     <section
-      className={`typography-content-input${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
-      title="悬停后可按 Ctrl / Cmd + V 粘贴带布局的文本图片"
-      onPointerEnter={upload.onPointerEnter}
-      onPointerLeave={upload.onPointerLeave}
+      className={`typography-content-input${disabled ? " disabled" : ""}${allowLayoutReference && upload.isPasteTarget ? " paste-ready" : ""}`}
+      title={allowLayoutReference ? "悬停后可按 Ctrl / Cmd + V 粘贴带布局的文本图片" : "可直接输入或粘贴多行文本"}
+      onPointerEnter={allowLayoutReference ? upload.onPointerEnter : undefined}
+      onPointerLeave={allowLayoutReference ? upload.onPointerLeave : undefined}
     >
       <label htmlFor="typography-text">文本内容</label>
       <textarea
@@ -862,9 +904,20 @@ function TypographyContentInput({ value, onTextChange, onAddAsset, disabled }: {
         placeholder={'例如：\n“NOBOOK · 618 狂欢季\n重走真理诞生路”'}
         disabled={disabled}
       />
-      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
-      <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || "选择带布局文本图片"}</button>
+      {allowLayoutReference ? <>
+        <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || "选择带布局文本图片"}</button>
+      </> : <small className="text-input-hint">支持换行；可直接粘贴多行文本。</small>}
     </section>
+  );
+}
+
+function TypographyInstructionInput({ value, onChange, disabled }: { value: string; onChange: (value: string) => void; disabled: boolean }) {
+  return (
+    <label className={`typography-instruction${disabled ? " disabled" : ""}`}>
+      <span>定制化要求 <em>非必填</em></span>
+      <textarea value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} placeholder="例如：突出“618”并使用另一种强调色；副标题更小、更克制。" />
+    </label>
   );
 }
 
@@ -908,4 +961,11 @@ function persistenceCopy(state: PersistenceState) {
   if (state === "saving") return "正在保存到此浏览器。";
   if (state === "error") return "本地保存不可用；当前会话仍可继续编辑。";
   return "已保存到此浏览器，可刷新后继续编辑。";
+}
+
+function persistenceCopyEn(state: PersistenceState) {
+  if (state === "loading") return "Restoring local project.";
+  if (state === "saving") return "Saving in this browser.";
+  if (state === "error") return "Local persistence is unavailable; this session remains editable.";
+  return "Saved in this browser and ready after refresh.";
 }

@@ -56,11 +56,28 @@
 .typography-content-input { display: flex; flex-direction: column; min-height: 180px; padding: 18px; border: 1px solid #2d3a43; border-radius: 7px; background: #101a20; }
 .typography-content-input:focus-within, .typography-content-input.paste-ready { border-color: #00d983; box-shadow: inset 0 0 0 1px rgba(0, 217, 131, .2); }
 .typography-content-input > label { color: #edf4ef; font-size: 14px; font-weight: 650; }
-.typography-content-input textarea { min-height: 72px; margin: 8px 0; padding: 0; color: #d7e7dc; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: transparent; border: 0; outline: 0; resize: vertical; }
+.typography-content-input textarea { flex: 1; width: 100%; min-height: 88px; margin: 8px 0; padding: 0; color: #d7e7dc; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: transparent; border: 0; outline: 0; resize: vertical; white-space: pre-wrap; }
 .typography-content-input textarea::placeholder { color: #71877c; opacity: 1; }
 .typography-content-input input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 .typography-content-input button { align-self: flex-start; padding: 0; color: #7bf89c; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: transparent; border: 0; cursor: pointer; }
 .typography-content-input button:disabled, .typography-content-input.disabled { cursor: wait; opacity: .6; }
+.text-input-hint { color: #89a195; font-size: 11px; line-height: 1.5; }
+.typography-mode-switch, .matte-switcher { display: inline-flex; overflow: hidden; margin-bottom: 16px; border: 1px solid #2d3a43; border-radius: 5px; }
+.typography-mode-switch button, .matte-switcher button { padding: 7px 11px; color: #9aafa4; background: transparent; border: 0; cursor: pointer; font-size: 11px; }
+.typography-mode-switch button.selected, .matte-switcher button.selected { color: #07100a; background: #7bf89c; }
+.typography-refine-grid { grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(180px, .9fr)); }
+.typography-matte-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 2px 0 18px; padding: 12px 14px; border: 1px solid #2d3a43; border-radius: 7px; background: #111a21; }
+.typography-matte-row strong, .typography-matte-row small { display: block; }
+.typography-matte-row strong { color: #edf4ef; font-size: 12px; }
+.typography-matte-row small { margin-top: 4px; color: #89a195; font-size: 11px; }
+.typography-matte-row .matte-switcher { flex: 0 0 auto; margin: 0; }
+.typography-instruction { display: flex; flex-direction: column; margin: -2px 0 18px; padding: 12px 14px; border: 1px solid #2d3a43; border-radius: 7px; background: #111a21; }
+.typography-instruction:focus-within { border-color: #00d983; box-shadow: inset 0 0 0 1px rgba(0, 217, 131, .2); }
+.typography-instruction > span { color: #edf4ef; font-size: 12px; font-weight: 650; }
+.typography-instruction em { margin-left: 5px; color: #89a195; font-size: 10px; font-style: normal; font-weight: 400; }
+.typography-instruction textarea { width: 100%; min-height: 52px; margin-top: 8px; padding: 0; color: #d7e7dc; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; background: transparent; border: 0; outline: 0; resize: vertical; }
+.typography-instruction textarea::placeholder { color: #71877c; opacity: 1; }
+.typography-instruction.disabled { cursor: wait; opacity: .6; }
 .status-card { min-height: 180px; padding: 18px; border: 1px solid #2d3a43; border-radius: 7px; background: #111a21; }
 .status-card span { color: #89a195; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
 .status-card h3 { margin: 34px 0 8px; color: #7bf89c; font-size: 18px; }
@@ -118,7 +135,7 @@
 .composition-stage > p { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 32px; color: #89a195; text-align: center; font-size: 13px; line-height: 1.6; }
 .canvas-layer { position: absolute; display: block; overflow: hidden; padding: 0; border: 0; background: transparent; cursor: grab; touch-action: none; user-select: none; }
 .canvas-layer:active { cursor: grabbing; }
-.canvas-layer img { width: 100%; height: 100%; object-fit: fill; display: block; pointer-events: none; }
+.canvas-layer img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
 .canvas-layer span { position: absolute; left: 4px; top: 4px; padding: 2px 4px; color: #d9ffe2; background: rgba(4, 10, 7, .74); border-radius: 2px; font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; opacity: 0; }
 .canvas-layer:hover span, .canvas-layer.selected span { opacity: 1; }
 .canvas-layer.selected { outline: 2px solid #7bf89c; outline-offset: -2px; }
@@ -155,5 +172,5 @@
 .export-footer > span { color: #c4d4c9; font-size: 13px; }
 .export-footer button { margin-left: auto; padding: 8px 12px; color: #5d7064; background: #1b2520; border: 1px solid #33453a; border-radius: 5px; cursor: not-allowed; }
 .advanced-option { color: #61746a; font-size: 12px; }
-@media (max-width: 820px) { .workspace-header { align-items: flex-start; flex-direction: column; } .workspace-body { grid-template-columns: 1fr; } .tool-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 1px solid #26313a; } .sidebar-label, .sidebar-note { display: none; } .asset-rail { flex-direction: column; } .tool-grid.two, .upload-matrix, .composition-workbench, .font-preset-grid { grid-template-columns: 1fr; } .section-heading { align-items: flex-start; flex-direction: column; gap: 6px; } .composition-flow-shell { height: 360px; } .composition-inspector { max-width: 430px; margin: 0 auto; } }
+@media (max-width: 820px) { .workspace-header { align-items: flex-start; flex-direction: column; } .workspace-body { grid-template-columns: 1fr; } .tool-sidebar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-right: 0; border-bottom: 1px solid #26313a; } .sidebar-label, .sidebar-note { display: none; } .asset-rail { flex-direction: column; } .tool-grid.two, .upload-matrix, .composition-workbench, .font-preset-grid, .typography-refine-grid { grid-template-columns: 1fr; } .typography-matte-row { align-items: flex-start; flex-direction: column; } .section-heading { align-items: flex-start; flex-direction: column; gap: 6px; } .composition-flow-shell { height: 360px; } .composition-inspector { max-width: 430px; margin: 0 auto; } }
 @media (max-width: 520px) { .workspace-header, .tool-canvas { padding-left: 16px; padding-right: 16px; } .header-controls { flex-wrap: wrap; } .tool-sidebar { grid-template-columns: 1fr; } .export-row { grid-template-columns: 18px 1fr auto; } .export-row span { grid-column: 2; } .export-row strong { grid-column: 2; } .export-row small { grid-column: 3; grid-row: 1 / span 2; } }

@@ -17,6 +17,8 @@ export type ProjectAssetKind =
 
 export type CompositionLayerKind = Extract<ProjectAssetKind, "top" | "bottom" | "side" | "typography" | "base-image">;
 export type TypographyPresetKey = "elegant-songti" | "expressive-calligraphy" | "rounded-cute" | "custom-reference";
+export type TypographyMode = "create" | "refine";
+export type TypographyMatte = "white" | "black";
 
 export interface ProjectAsset {
   id: string;
@@ -62,6 +64,9 @@ export interface CompositionDocument {
 export interface TypographySettings {
   fontPresetKey: TypographyPresetKey;
   text: string;
+  instruction: string;
+  mode: TypographyMode;
+  matte: TypographyMatte;
 }
 
 export type PersistenceState = "loading" | "saving" | "saved" | "error";
@@ -110,7 +115,7 @@ function createEmptyComposition(): CompositionDocument {
 }
 
 function createDefaultTypography(): TypographySettings {
-  return { fontPresetKey: "elegant-songti", text: "" };
+  return { fontPresetKey: "elegant-songti", text: "", instruction: "", mode: "create", matte: "white" };
 }
 
 function cloneComposition(composition: CompositionDocument): CompositionDocument {
@@ -145,10 +150,34 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function addAssetToComposition(composition: CompositionDocument, asset: ProjectAsset): CompositionDocument {
+function initialLayerGeometry(kind: CompositionLayerKind, imageAspect: number) {
+  if (kind === "base-image") return defaultLayerGeometry[kind];
+  const stageAspect = 9 / 16;
+  const heightFor = (width: number, min: number, max: number) => clamp((width * stageAspect) / Math.max(imageAspect, 0.08), min, max);
+
+  if (kind === "top") {
+    const height = heightFor(100, 8, 30);
+    return { ...defaultLayerGeometry.top, x: 0, y: 0, width: 100, height };
+  }
+  if (kind === "bottom") {
+    const height = heightFor(100, 8, 30);
+    return { ...defaultLayerGeometry.bottom, x: 0, y: 100 - height, width: 100, height };
+  }
+  if (kind === "side") {
+    const width = 20;
+    const height = heightFor(width, 14, 76);
+    return { ...defaultLayerGeometry.side, x: 100 - width, y: (100 - height) / 2, width, height };
+  }
+
+  const width = 80;
+  const height = heightFor(width, 8, 28);
+  return { ...defaultLayerGeometry.typography, x: 10, y: (100 - height) / 2, width, height };
+}
+
+function addAssetToComposition(composition: CompositionDocument, asset: ProjectAsset, imageAspect: number): CompositionDocument {
   if (!isCompositionLayerKind(asset.kind)) return composition;
   const existing = composition.layers.find((layer) => layer.kind === asset.kind);
-  const base = existing ?? { ...defaultLayerGeometry[asset.kind], mask: emptyMask() };
+  const base = { ...initialLayerGeometry(asset.kind, imageAspect), mask: existing?.mask ?? emptyMask() };
   const nextLayer: CompositionLayer = { ...base, id: existing?.id ?? makeAssetId(), assetId: asset.id, kind: asset.kind };
   const layers = existing ? composition.layers.map((layer) => layer.id === existing.id ? nextLayer : layer) : [...composition.layers, nextLayer];
   return { ...composition, layers, selectedLayerId: nextLayer.id, updatedAt: new Date().toISOString() };
@@ -277,12 +306,13 @@ export function useProjectWorkspace() {
   const addAsset = useCallback(async (file: File, kind: ProjectAssetKind) => {
     if (!file.type.startsWith("image/")) throw new Error("请上传图片文件。");
     const prepared = kind === "typography" ? await trimTransparentTypography(file) : { blob: file, trimmed: false };
+    const imageAspect = await getImageAspect(prepared.blob);
     const previewUrl = URL.createObjectURL(prepared.blob);
     urls.current.add(previewUrl);
     const asset: ProjectAsset = { id: makeAssetId(), kind, source: "uploaded", fileName: file.name, mimeType: prepared.blob.type || file.type, sizeBytes: prepared.blob.size, trimmed: prepared.trimmed, previewUrl, blob: prepared.blob, createdAt: new Date().toISOString() };
     setAssets((current) => [...current, asset]);
     setComposition((current) => {
-      const next = addAssetToComposition(current, asset);
+      const next = addAssetToComposition(current, asset, imageAspect);
       compositionRef.current = next;
       return next;
     });
@@ -424,6 +454,15 @@ async function trimTransparentTypography(file: Blob): Promise<{ blob: Blob; trim
   cropContext.drawImage(source, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height);
   const blob = await canvasToPng(cropped);
   return { blob, trimmed: true };
+}
+
+async function getImageAspect(file: Blob): Promise<number> {
+  try {
+    const image = await loadLocalImage(file);
+    return image.naturalWidth > 0 && image.naturalHeight > 0 ? image.naturalWidth / image.naturalHeight : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function loadLocalImage(file: Blob): Promise<HTMLImageElement> {
