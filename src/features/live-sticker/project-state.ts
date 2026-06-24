@@ -8,6 +8,7 @@ const CURRENT_PROJECT_KEY = "current";
 export type ProjectAssetKind =
   | "reference"
   | "font-reference"
+  | "layout-reference"
   | "top"
   | "bottom"
   | "side"
@@ -60,6 +61,7 @@ export interface CompositionDocument {
 
 export interface TypographySettings {
   fontPresetKey: TypographyPresetKey;
+  text: string;
 }
 
 export type PersistenceState = "loading" | "saving" | "saved" | "error";
@@ -78,6 +80,7 @@ interface PersistedProject {
 export const assetKindLabels: Record<ProjectAssetKind, string> = {
   reference: "色彩纹理参考",
   "font-reference": "字体参考",
+  "layout-reference": "布局文本参考",
   top: "上贴",
   bottom: "下贴",
   side: "侧贴",
@@ -107,7 +110,7 @@ function createEmptyComposition(): CompositionDocument {
 }
 
 function createDefaultTypography(): TypographySettings {
-  return { fontPresetKey: "elegant-songti" };
+  return { fontPresetKey: "elegant-songti", text: "" };
 }
 
 function cloneComposition(composition: CompositionDocument): CompositionDocument {
@@ -246,7 +249,7 @@ export function useProjectWorkspace() {
         setAssets(restoredAssets);
         compositionRef.current = restoredComposition;
         setComposition(restoredComposition);
-        setTypography(project.typography ?? createDefaultTypography());
+        setTypography({ ...createDefaultTypography(), ...project.typography });
       }
       ready.current = true;
       setPersistenceState("saved");

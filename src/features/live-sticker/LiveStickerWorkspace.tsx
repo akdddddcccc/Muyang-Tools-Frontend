@@ -1,4 +1,6 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 import { fetchCoreHealth, getCoreBaseUrl, type CoreHealth } from "../../lib/core-api";
 import {
   assetKindLabels,
@@ -15,6 +17,15 @@ import "./live-sticker.css";
 
 type ToolId = "background" | "typography" | "composition" | "exports";
 type HealthState = "checking" | "online" | "offline";
+type CompositionInputKind = "base-image" | "top" | "bottom" | "side" | "typography";
+type FlowAssetNodeData = {
+  kind: CompositionInputKind;
+  label: string;
+  asset?: ProjectAsset;
+  disabled?: boolean;
+  onAddAsset?: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+  onSelectAsset?: (assetId: string) => void;
+};
 
 const tools: Array<{ id: ToolId; step: string; label: string; caption: string }> = [
   { id: "background", step: "01", label: "背景生成", caption: "上贴 / 下贴 / 侧贴" },
@@ -29,7 +40,7 @@ const fontPresets: Array<{ key: TypographyPresetKey; label: string; detail: stri
   { key: "elegant-songti", label: "优雅宋体", detail: "明宋结构、细粗对比、克制的印刷感", image: publicAssetUrl("font-presets/elegant-songti.png") },
   { key: "expressive-calligraphy", label: "表现书法", detail: "笔势、压感变化与有方向的笔画", image: publicAssetUrl("font-presets/expressive-calligraphy.png") },
   { key: "rounded-cute", label: "圆润可爱", detail: "饱满圆角、轻松易读的贴纸字形", image: publicAssetUrl("font-presets/rounded-cute.png") },
-  { key: "custom-reference", label: "自定义参考", detail: "使用你上传的字体参考图，不默认传入第二张预设图" },
+  { key: "custom-reference", label: "自定义字体字形", detail: "上传去色字体图，只学习字形、笔画与局部纹理" },
 ];
 
 export function LiveStickerWorkspace({
@@ -145,7 +156,7 @@ export function LiveStickerWorkspace({
             onEndCompositionInteraction={endCompositionInteraction}
             onUndo={undoComposition}
             onRedo={redoComposition}
-            onTypographyChange={setTypography}
+            onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
             health={health}
           />
         </section>
@@ -213,7 +224,7 @@ function ToolPanel({
   onEndCompositionInteraction: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onTypographyChange: (settings: TypographySettings) => void;
+  onTypographyChange: (settings: Partial<TypographySettings>) => void;
   health: CoreHealth | null;
 }) {
   if (activeTool === "background") {
@@ -240,15 +251,22 @@ function BackgroundTool({ assets, onAddAsset, health, projectReady }: ToolProps 
   );
 }
 
-function TypographyTool({ assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: TypographySettings) => void }) {
+function TypographyTool({ assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
   const customColorReference = latestAsset(assets, "reference");
+  const layoutReference = latestAsset(assets, "layout-reference");
   const activeColorReference = customColorReference ?? topAsset;
 
   return (
     <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title="文字图层" detail="该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。">
-      <div className="tool-grid">
-        <AssetUpload kind="reference" label="上传色彩纹理参考" help="最新上传的参考会优先于项目上贴。" onAddAsset={onAddAsset} disabled={!projectReady} />
+      <div className="tool-grid two typography-input-grid">
+        <TypographyContentInput
+          value={typography.text}
+          onTextChange={(text) => onTypographyChange({ text })}
+          onAddAsset={onAddAsset}
+          disabled={!projectReady}
+        />
+        <AssetUpload kind="reference" label="文字颜色与质感参考" help="上传后覆盖上贴；未上传时自动继承当前项目上贴。" onAddAsset={onAddAsset} disabled={!projectReady} />
       </div>
       <section className="font-preset-section" aria-label="默认生图字体">
         <div className="section-heading"><p>默认生图字体</p><small>这些参考图只约束字形与笔画节奏；色彩、材质与装饰仍以当前上贴或色彩纹理参考为准。</small></div>
@@ -273,9 +291,9 @@ function TypographyTool({ assets, onAddAsset, projectReady, typography, onTypogr
       <StatusCard
         title="当前色彩参考"
         value={activeColorReference ? `${assetKindLabels[activeColorReference.kind]} · ${activeColorReference.fileName}` : "尚未选择"}
-        detail={activeColorReference ? "字体参考只影响字形、笔画和局部纹理，不覆盖整体色彩。" : "上传色彩纹理参考，或先向项目加入上贴素材。"}
+        detail={activeColorReference ? "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。" : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。"}
       />
-      <AssetCollection assets={assets.filter((asset) => asset.kind === "font-reference")} empty="当前使用内置字体预设；上传后可切换至自定义参考。" />
+      <AssetCollection assets={assets.filter((asset) => asset.kind === "layout-reference" || asset.kind === "font-reference")} empty="输入文本即可生成；也可以上传布局文本图或字体参考。" />
     </ToolFrame>
   );
 }
@@ -308,26 +326,14 @@ function CompositionTool({
   projectReady: boolean;
 }) {
   const [mode, setMode] = useState<"select" | "mask">("select");
-  const uploads: Array<{ kind: ProjectAssetKind; label: string }> = [
-    { kind: "base-image", label: "直播间无贴片底图" },
-    { kind: "top", label: "上贴" },
-    { kind: "bottom", label: "下贴" },
-    { kind: "side", label: "侧贴" },
-    { kind: "typography", label: "文字图层" },
-  ];
-
   const canvasLayers = composition.layers
     .map((layer) => ({ layer, asset: assets.find((asset) => asset.id === layer.assetId) }))
     .filter((item): item is { layer: CompositionLayer; asset: ProjectAsset } => Boolean(item.asset));
   const selectedLayer = canvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? canvasLayers.at(-1)?.layer;
 
   return (
-    <ToolFrame eyebrow="03 / COMPOSITION BOARD" title="效果融合" detail="该工具可独立使用。导入素材后会建立可保存的本地图层；位置、尺寸、透明度和遮罩预留字段都进入同一份项目文档。">
-      <div className="upload-matrix">
-        {uploads.map((upload) => (
-          <AssetUpload key={upload.kind} kind={upload.kind} label={`导入${upload.label}`} help="新素材会替换画板中同类图层，历史素材仍保留在项目资产内。" onAddAsset={onAddAsset} compact disabled={!projectReady} />
-        ))}
-      </div>
+    <ToolFrame eyebrow="03 / COMPOSITION BOARD" title="效果融合" detail="素材节点会自动继承前面工具的最新结果，也可在节点内替换。所有输入始终吸附到融合输出，画板继续用于精细位置、尺寸与遮罩调整。">
+      <CompositionFlow assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
       <div className="composition-workbench">
         <div className="composition-stage-wrap">
           <div className="composition-toolbar">
@@ -347,6 +353,115 @@ function CompositionTool({
       </div>
     </ToolFrame>
   );
+}
+
+const compositionNodeTypes = { asset: FlowAssetNode, output: FlowOutputNode };
+const compositionEdgeTypes = { octopus: OctopusEdge };
+
+function CompositionFlow({ assets, composition, onAddAsset, onSelectLayer, projectReady }: { assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState([
+    { id: "base-image", type: "asset", position: { x: 24, y: 38 }, data: { kind: "base-image", label: "直播间底图" } },
+    { id: "top", type: "asset", position: { x: 190, y: 38 }, data: { kind: "top", label: "上贴" } },
+    { id: "side", type: "asset", position: { x: 356, y: 38 }, data: { kind: "side", label: "侧贴" } },
+    { id: "bottom", type: "asset", position: { x: 522, y: 38 }, data: { kind: "bottom", label: "下贴" } },
+    { id: "typography", type: "asset", position: { x: 688, y: 38 }, data: { kind: "typography", label: "文字图层" } },
+    { id: "merge-output", type: "output", position: { x: 354, y: 216 }, data: {} },
+  ]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([
+    "base-image", "top", "side", "bottom", "typography",
+  ].map((source) => ({ id: `${source}-merge`, source, sourceHandle: "output", target: "merge-output", targetHandle: "input", type: "octopus", animated: true })));
+
+  const selectAsset = useCallback((assetId: string) => {
+    const layer = composition.layers.find((item) => item.assetId === assetId);
+    if (layer) onSelectLayer(layer.id);
+  }, [composition.layers, onSelectLayer]);
+
+  useEffect(() => {
+    setNodes((current) => current.map((node) => {
+      if (node.id === "merge-output") return node;
+      const data = node.data as FlowAssetNodeData;
+      const asset = [...assets].reverse().find((item) => item.kind === data.kind);
+      return { ...node, data: { ...data, asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset } };
+    }));
+  }, [assets, onAddAsset, projectReady, selectAsset, setNodes]);
+
+  const onConnect = useCallback((connection: Connection) => {
+    if (connection.target !== "merge-output") return;
+    setEdges((current) => addEdge({ ...connection, type: "octopus", animated: true }, current));
+  }, [setEdges]);
+
+  const onNodeDragStop = useCallback((_event: unknown, node: { id: string; position: { x: number; y: number } }) => {
+    if (node.id === "merge-output") return;
+    const position = { x: Math.min(770, Math.max(10, node.position.x)), y: Math.min(150, Math.max(14, node.position.y)) };
+    setNodes((current) => current.map((item) => item.id === node.id ? { ...item, position, className: "flow-node-rebound" } : item));
+    window.setTimeout(() => setNodes((current) => current.map((item) => item.id === node.id ? { ...item, className: "" } : item)), 360);
+  }, [setNodes]);
+
+  return (
+    <div className="composition-flow-shell">
+      <ReactFlowProvider>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={compositionNodeTypes}
+          edgeTypes={compositionEdgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeDragStop={onNodeDragStop}
+          fitView
+          fitViewOptions={{ padding: 0.15 }}
+          snapToGrid
+          snapGrid={[16, 16]}
+          nodesConnectable
+          minZoom={0.7}
+          maxZoom={1.5}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={18} size={1} color="rgba(123, 248, 156, .1)" />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+      </ReactFlowProvider>
+    </div>
+  );
+}
+
+function FlowAssetNode({ data }: NodeProps) {
+  const node = data as FlowAssetNodeData;
+  const fileInput = useRef<HTMLInputElement>(null);
+  const unavailableUpload = useCallback(async () => { throw new Error("当前节点不可上传。"); }, []);
+  const upload = useImagePasteUpload({ kind: node.kind, onAddAsset: node.onAddAsset ?? unavailableUpload, disabled: Boolean(node.disabled || !node.onAddAsset) });
+
+  return (
+    <div
+      className={`flow-asset-node${upload.isPasteTarget ? " paste-ready" : ""}`}
+      title="悬停后可按 Ctrl / Cmd + V 粘贴图片"
+      onPointerEnter={upload.onPointerEnter}
+      onPointerLeave={upload.onPointerLeave}
+      onClick={() => node.asset && node.onSelectAsset?.(node.asset.id)}
+    >
+      <span>{node.label}</span>
+      {node.asset ? <img src={node.asset.previewUrl} alt="" /> : <small>继承前序结果</small>}
+      <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={node.disabled} />
+      <button className="nodrag nopan" type="button" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }} disabled={node.disabled}>{upload.message || "选择图片"}</button>
+      <Handle className="flow-handle source" type="source" position={Position.Bottom} id="output" />
+    </div>
+  );
+}
+
+function FlowOutputNode() {
+  return (
+    <div className="flow-output-node">
+      <Handle className="flow-handle target" type="target" position={Position.Top} id="input" />
+      <span>融合输出</span>
+      <small>拖入画板继续微调</small>
+    </div>
+  );
+}
+
+function OctopusEdge({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, style }: EdgeProps) {
+  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, curvature: 0.42 });
+  return <BaseEdge path={path} style={{ stroke: "#7bf89c", strokeWidth: 1.5, strokeLinecap: "round", ...style }} />;
 }
 
 function CompositionCanvas({
@@ -728,6 +843,31 @@ function AssetUpload({ kind, label, help, onAddAsset, compact = false, disabled 
   );
 }
 
+function TypographyContentInput({ value, onTextChange, onAddAsset, disabled }: { value: string; onTextChange: (text: string) => void; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const upload = useImagePasteUpload({ kind: "layout-reference", onAddAsset, disabled });
+
+  return (
+    <section
+      className={`typography-content-input${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
+      title="悬停后可按 Ctrl / Cmd + V 粘贴带布局的文本图片"
+      onPointerEnter={upload.onPointerEnter}
+      onPointerLeave={upload.onPointerLeave}
+    >
+      <label htmlFor="typography-text">文本内容</label>
+      <textarea
+        id="typography-text"
+        value={value}
+        onChange={(event) => onTextChange(event.target.value)}
+        placeholder={'例如：\n“NOBOOK · 618 狂欢季\n重走真理诞生路”'}
+        disabled={disabled}
+      />
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || "选择带布局文本图片"}</button>
+    </section>
+  );
+}
+
 function CustomFontReferenceCard({ selected, disabled, onAddAsset, onActivate }: { selected: boolean; disabled: boolean; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onActivate: () => void }) {
   const upload = useImagePasteUpload({ kind: "font-reference", onAddAsset, disabled, onActivate });
 
@@ -740,8 +880,8 @@ function CustomFontReferenceCard({ selected, disabled, onAddAsset, onActivate }:
       onPointerLeave={upload.onPointerLeave}
     >
       <span className="custom-font-mark">Aa</span>
-      <strong>自定义参考</strong>
-      <small>{upload.message || "上传自己的字体字形参考"}</small>
+      <strong>自定义字体字形</strong>
+      <small>{upload.message || "建议上传去色字体图，只学习字形与笔画"}</small>
       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
     </label>
   );
