@@ -23,10 +23,12 @@ const tools: Array<{ id: ToolId; step: string; label: string; caption: string }>
   { id: "exports", step: "04", label: "导出资产", caption: "选择与打包" },
 ];
 
+const publicAssetUrl = (path: string) => `${import.meta.env.BASE_URL}assets/${path}`;
+
 const fontPresets: Array<{ key: TypographyPresetKey; label: string; detail: string; image?: string }> = [
-  { key: "elegant-songti", label: "优雅宋体", detail: "明宋结构、细粗对比、克制的印刷感", image: "/assets/font-presets/elegant-songti.png" },
-  { key: "expressive-calligraphy", label: "表现书法", detail: "笔势、压感变化与有方向的笔画", image: "/assets/font-presets/expressive-calligraphy.png" },
-  { key: "rounded-cute", label: "圆润可爱", detail: "饱满圆角、轻松易读的贴纸字形", image: "/assets/font-presets/rounded-cute.png" },
+  { key: "elegant-songti", label: "优雅宋体", detail: "明宋结构、细粗对比、克制的印刷感", image: publicAssetUrl("font-presets/elegant-songti.png") },
+  { key: "expressive-calligraphy", label: "表现书法", detail: "笔势、压感变化与有方向的笔画", image: publicAssetUrl("font-presets/expressive-calligraphy.png") },
+  { key: "rounded-cute", label: "圆润可爱", detail: "饱满圆角、轻松易读的贴纸字形", image: publicAssetUrl("font-presets/rounded-cute.png") },
   { key: "custom-reference", label: "自定义参考", detail: "使用你上传的字体参考图，不默认传入第二张预设图" },
 ];
 
@@ -84,7 +86,7 @@ export function LiveStickerWorkspace({
     <main className="workspace-shell">
       <header className="workspace-header">
         <div className="brand-lockup">
-          <img className="brand-mark" src="/assets/tool-icon.svg" alt="MUYANG 工具" />
+          <img className="brand-mark" src={publicAssetUrl("tool-icon.svg")} alt="MUYANG 工具" />
           <div>
             <p>MUYANG x NOBOOK</p>
             <h1>AI 直播贴片工作台</h1>

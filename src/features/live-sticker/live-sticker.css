@@ -1,8 +1,10 @@
 .workspace-shell { min-height: 100vh; color: #edf4ef; background: #0b1015; }
 .workspace-header { min-height: 72px; display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 12px 24px; border-bottom: 1px solid #26313a; background: rgba(11, 16, 21, .96); }
 .brand-lockup, .header-controls { display: flex; align-items: center; gap: 12px; }
+.brand-lockup { min-width: 0; }
 .brand-mark { width: 54px; height: 54px; object-fit: contain; flex: 0 0 auto; transform: translateY(4px); }
 .brand-lockup p, .brand-lockup h1 { margin: 0; }
+.brand-lockup p, .brand-lockup h1 { white-space: nowrap; }
 .brand-lockup p, .panel-eyebrow, .sidebar-label, .service-state, .tool-nav span, .tool-nav small, .asset-rail p { font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; }
 .brand-lockup p, .panel-eyebrow, .sidebar-label, .tool-nav small, .asset-rail small { color: #89a195; }
 .brand-lockup h1 { margin-top: 3px; font-size: 15px; }
