@@ -5,6 +5,8 @@ const DATABASE_VERSION = 1;
 const PROJECT_STORE = "projects";
 const CURRENT_PROJECT_KEY = "current";
 
+export const COMPOSITION_OUTPUT = { width: 1080, height: 1920 } as const;
+
 export type ProjectAssetKind =
   | "reference"
   | "font-reference"
@@ -156,16 +158,16 @@ function initialLayerGeometry(kind: CompositionLayerKind, imageAspect: number) {
   const heightFor = (width: number, min: number, max: number) => clamp((width * stageAspect) / Math.max(imageAspect, 0.08), min, max);
 
   if (kind === "top") {
-    const height = heightFor(100, 8, 30);
+    const height = heightFor(100, 4, 100);
     return { ...defaultLayerGeometry.top, x: 0, y: 0, width: 100, height };
   }
   if (kind === "bottom") {
-    const height = heightFor(100, 8, 30);
+    const height = heightFor(100, 4, 100);
     return { ...defaultLayerGeometry.bottom, x: 0, y: 100 - height, width: 100, height };
   }
   if (kind === "side") {
     const width = 20;
-    const height = heightFor(width, 14, 76);
+    const height = heightFor(width, 10, 100);
     return { ...defaultLayerGeometry.side, x: 100 - width, y: (100 - height) / 2, width, height };
   }
 
