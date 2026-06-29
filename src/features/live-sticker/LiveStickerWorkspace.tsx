@@ -1,7 +1,7 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { createTypographyJob, fetchCoreHealth, getCoreBaseUrl, type CoreHealth } from "../../lib/core-api";
+import { createBackgroundJob, createTypographyJob, fetchCoreHealth, getCoreBaseUrl, type BackgroundKind, type CoreHealth, type ImageReferenceInput } from "../../lib/core-api";
 import {
   assetKindLabels,
   COMPOSITION_OUTPUT,
@@ -248,11 +248,49 @@ function ToolPanel({
 
 function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
   const isEnglish = language === "en";
+  const [prompt, setPrompt] = useState("");
+  const [runningKind, setRunningKind] = useState<BackgroundKind | "all" | "">("");
+  const [message, setMessage] = useState("");
+  const reference = latestAsset(assets, "reference");
+
+  const generateOne = async (kind: BackgroundKind) => {
+    const job = await createBackgroundJob({ kind, prompt: prompt || undefined, reference: reference ? await assetReference(reference) : undefined });
+    if (job.status === "failed") throw new Error(job.error?.message || "Background generation failed.");
+    if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");
+    await onAddAsset(await resultFile(job.result, `${kind}-${job.id}.jpg`), kind);
+  };
+
+  const runGeneration = async (kind: BackgroundKind | "all") => {
+    setRunningKind(kind);
+    setMessage(isEnglish ? "OFOX is generating..." : "OFOX 正在生成…");
+    try {
+      if (kind === "all") {
+        for (const item of ["top", "bottom", "side"] as BackgroundKind[]) {
+          setMessage(isEnglish ? `Generating ${item}...` : `正在生成${item === "top" ? "上贴" : item === "bottom" ? "下贴" : "侧贴"}…`);
+          await generateOne(item);
+        }
+      } else {
+        await generateOne(kind);
+      }
+      setMessage(isEnglish ? "Generated and added to the project." : "生成成功，已加入当前项目。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
+    } finally {
+      setRunningKind("");
+    }
+  };
+
   return (
-    <ToolFrame eyebrow="01 / BACKGROUND ASSETS" title={isEnglish ? "Background assets" : "背景生成"} detail={isEnglish ? "Top, bottom and side stickers run as independent tasks. Establish project inputs and a Core connection here; generation is connected separately." : "上贴、下贴与侧贴将作为独立任务运行。当前先建立项目素材和 Core 连接；生成模块尚未接入。"}>
+    <ToolFrame eyebrow="01 / BACKGROUND ASSETS" title={isEnglish ? "Background assets" : "背景生成"} detail={isEnglish ? "Generate each asset independently or run the fixed top, bottom and side sequence. The latest reference supplies palette, material and texture." : "上贴、下贴与侧贴既可独立生成，也可按上、下、侧的固定顺序依次生成；最新参考图提供色彩、材质与纹理。"}>
       <div className="tool-grid two">
         <AssetUpload language={language} kind="reference" label={isEnglish ? "Room / colour reference" : "添加直播间 / 色彩参考图"} help={isEnglish ? "Reuse it in later background and typography work." : "上传后可在后续背景生成与文字图层中复用。"} onAddAsset={onAddAsset} disabled={!projectReady} />
-        <StatusCard title={isEnglish ? "Core service" : "Core 服务"} value={health ? (isEnglish ? "Foundation ready" : "基础服务可用") : (isEnglish ? "Waiting for Core" : "等待 Core")} detail={health ? (isEnglish ? "The image adapter has not been configured." : "模型 Provider 尚未配置。") : (isEnglish ? "Start live-sticker-api and check again." : "请启动 live-sticker-api 后重新检查。")} />
+        <StatusCard title={isEnglish ? "Core service" : "Core 服务"} value={health?.providers.imageGeneration === "ready" ? (isEnglish ? "OFOX ready" : "OFOX 已就绪") : (isEnglish ? "Waiting for Core" : "等待 Core")} detail={health?.providers.imageGeneration === "ready" ? (isEnglish ? "Background generation is available." : "上、下、侧贴生成均可用。") : (isEnglish ? "Check the server OFOX configuration." : "请检查服务器 OFOX 配置。")} />
+      </div>
+      <TypographyInstructionInput language={language} value={prompt} onChange={setPrompt} disabled={!projectReady || Boolean(runningKind)} />
+      <div className="generation-action-row background-generation-actions">
+        <button type="button" onClick={() => void runGeneration("all")} disabled={!projectReady || Boolean(runningKind)}>{runningKind === "all" ? (isEnglish ? "Generating..." : "依次生成中…") : (isEnglish ? "Generate all" : "依次生成上 / 下 / 侧")}</button>
+        {(["top", "bottom", "side"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : kind === "bottom" ? "下贴" : "侧贴"}`}</button>)}
+        <p>{message || (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。")}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => asset.kind === "reference")} empty={isEnglish ? "Add a reference image for later background work." : "添加一张参考图后，背景任务会从这里读取素材。"} />
       <ToolOutputPreview language={language} title={isEnglish ? "Background output preview" : "背景产出预览"} assets={assets} kinds={["top", "bottom", "side"]} />
@@ -270,7 +308,9 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
   const [generationMessage, setGenerationMessage] = useState("");
 
   const generateTypography = async () => {
-    if (!typography.text.trim() || isRefineMode) return;
+    const layoutReference = latestAsset(assets, "layout-reference");
+    const existingTypography = latestAsset(assets, "typography");
+    if ((!typography.text.trim() && !layoutReference) || (isRefineMode && !existingTypography)) return;
     setIsGenerating(true);
     setGenerationMessage(isEnglish ? "OFOX is generating the first draft..." : "OFOX 正在生成首版文字图层…");
     try {
@@ -280,12 +320,16 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         mode: typography.mode,
         matte: typography.matte,
         instruction: typography.instruction || undefined,
+        references: {
+          color: activeColorReference ? await assetReference(activeColorReference) : undefined,
+          font: isRefineMode ? undefined : await activeFontReference(typography.fontPresetKey, assets),
+          layout: isRefineMode || !layoutReference ? undefined : await assetReference(layoutReference),
+          typography: isRefineMode && existingTypography ? await assetReference(existingTypography) : undefined,
+        },
       });
       if (job.status === "failed") throw new Error(job.error?.message || "Typography generation failed.");
       if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");
-      const response = await fetch(job.result.url);
-      const blob = await response.blob();
-      await onAddAsset(new File([blob], job.result.fileName || `typography-${job.id}.png`, { type: job.result.mimeType || "image/png" }), "typography");
+      await onAddAsset(await resultFile(job.result, `typography-${job.id}.png`), "typography");
       setGenerationMessage(isEnglish ? "Generated and added to the output preview." : "生成成功，已加入下方产出预览。");
     } catch (error) {
       setGenerationMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
@@ -351,10 +395,10 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         detail={isRefineMode ? (activeColorReference ? (isEnglish ? "The uploaded colour/material reference has priority." : "上传的颜色质感参考优先；未上传时沿用已有文字图层的颜色、纹理与字体。") : (isEnglish ? "Without an override, the existing text layer supplies lettering, colour and texture." : "未上传覆盖参考时，系统只沿用已有文字图层的字形、颜色和纹理。")) : (activeColorReference ? (isEnglish ? "This reference sets colour, material and ornaments. Glyph references do not override it." : "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。") : (isEnglish ? "The latest top sticker is inherited when available; upload an override any time." : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。"))}
       />
       <div className="generation-action-row">
-        <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || isRefineMode || !typography.text.trim()}>
-          {isGenerating ? (isEnglish ? "Generating..." : "正在生成…") : (isEnglish ? "Generate with OFOX" : "使用 OFOX 生成文字图层")}
+        <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || (!typography.text.trim() && !latestAsset(assets, "layout-reference")) || (isRefineMode && !latestAsset(assets, "typography"))}>
+          {isGenerating ? (isEnglish ? "Generating..." : "正在生成…") : isRefineMode ? (isEnglish ? "Refine with OFOX" : "使用 OFOX 微调文字图层") : (isEnglish ? "Generate with OFOX" : "使用 OFOX 生成文字图层")}
         </button>
-        <p>{isRefineMode ? (isEnglish ? "The first live demo currently supports Create New mode." : "首个在线 demo 先支持“新建文字图层”模式。") : generationMessage || (isEnglish ? "Enter text, then generate a real server-side image." : "输入文本后，可直接生成一张服务器端真实图片。")}</p>
+        <p>{generationMessage || (isRefineMode ? (isEnglish ? "Upload an existing typography layer, enter replacement text, then refine it." : "上传已有文字层并填写替换文本后即可微调。") : (isEnglish ? "Enter text, then generate a real transparent server-side image." : "输入文本后，可直接生成并自动抠出透明文字图层。"))}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? (isEnglish ? "Upload an existing text layer to refine it with new copy." : "上传一张已有文字图层后，可按新的文本内容微调。") : (isEnglish ? "Enter copy to generate, or upload layout and glyph references." : "输入文本即可生成；也可以上传布局文本图或字体参考。")} />
       <ToolOutputPreview language={language} title={isEnglish ? "Typography output preview" : "文字图层产出预览"} assets={assets} kinds={["typography"]} matte={typography.matte} />
@@ -1060,6 +1104,68 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
 
 function latestAsset(assets: ProjectAsset[], kind: ProjectAssetKind) {
   return [...assets].reverse().find((asset) => asset.kind === kind);
+}
+
+async function resultFile(result: { url: string; fileName?: string; mimeType?: string }, fallbackName: string) {
+  const response = await fetch(result.url);
+  const blob = await response.blob();
+  return new File([blob], result.fileName || fallbackName, { type: result.mimeType || blob.type || "image/png" });
+}
+
+async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput> {
+  const preserveAlpha = asset.kind === "typography";
+  const blob = await resizeReference(asset.blob, preserveAlpha);
+  return { assetId: asset.id, mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
+}
+
+async function activeFontReference(fontPresetKey: TypographyPresetKey, assets: ProjectAsset[]): Promise<ImageReferenceInput | undefined> {
+  if (fontPresetKey === "custom-reference") {
+    const custom = latestAsset(assets, "font-reference");
+    return custom ? assetReference(custom) : undefined;
+  }
+  const preset = fontPresets.find((item) => item.key === fontPresetKey);
+  if (!preset?.image) return undefined;
+  const response = await fetch(preset.image);
+  if (!response.ok) throw new Error("无法读取默认字体参考图。");
+  const blob = await resizeReference(await response.blob(), false);
+  return { mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
+}
+
+async function resizeReference(source: Blob, preserveAlpha: boolean): Promise<Blob> {
+  const url = URL.createObjectURL(source);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("无法读取参考图片。"));
+      element.src = url;
+    });
+    const maxDimension = 1536;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法处理参考图片。");
+    if (!preserveAlpha) {
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const mimeType = preserveAlpha ? "image/png" : "image/jpeg";
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("参考图片压缩失败。")), mimeType, 0.86));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("参考图片编码失败。"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function formatBytes(bytes: number) {

@@ -86,6 +86,8 @@
 .generation-action-row button { flex: 0 0 auto; padding: 9px 12px; color: #07100a; background: #7bf89c; border: 0; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 700; }
 .generation-action-row button:disabled { color: #68796d; background: #26332a; cursor: not-allowed; }
 .generation-action-row p { margin: 0; color: #aabbb0; font-size: 11px; line-height: 1.55; }
+.background-generation-actions { flex-wrap: wrap; }
+.background-generation-actions p { flex: 1 1 260px; }
 .asset-collection { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .asset-collection img { width: 98px; height: 76px; object-fit: cover; border: 1px solid #2d3a43; border-radius: 5px; }
 .tool-output-preview { margin-top: 30px; padding-top: 18px; border-top: 1px solid #26313a; }
