@@ -1,7 +1,7 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { fetchCoreHealth, getCoreBaseUrl, type CoreHealth } from "../../lib/core-api";
+import { createTypographyJob, fetchCoreHealth, getCoreBaseUrl, type CoreHealth } from "../../lib/core-api";
 import {
   assetKindLabels,
   COMPOSITION_OUTPUT,
@@ -266,6 +266,33 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
   const activeColorReference = customColorReference ?? topAsset;
   const isRefineMode = typography.mode === "refine";
   const isEnglish = language === "en";
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState("");
+
+  const generateTypography = async () => {
+    if (!typography.text.trim() || isRefineMode) return;
+    setIsGenerating(true);
+    setGenerationMessage(isEnglish ? "OFOX is generating the first draft..." : "OFOX 正在生成首版文字图层…");
+    try {
+      const job = await createTypographyJob({
+        text: typography.text,
+        fontPresetKey: typography.fontPresetKey,
+        mode: typography.mode,
+        matte: typography.matte,
+        instruction: typography.instruction || undefined,
+      });
+      if (job.status === "failed") throw new Error(job.error?.message || "Typography generation failed.");
+      if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");
+      const response = await fetch(job.result.url);
+      const blob = await response.blob();
+      await onAddAsset(new File([blob], job.result.fileName || `typography-${job.id}.png`, { type: job.result.mimeType || "image/png" }), "typography");
+      setGenerationMessage(isEnglish ? "Generated and added to the output preview." : "生成成功，已加入下方产出预览。");
+    } catch (error) {
+      setGenerationMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   return (
     <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment. The draft is rendered on white or black for later cutout." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格。输出为纯白或纯黑底稿，供后续抠图。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
@@ -323,6 +350,12 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         value={activeColorReference ? `${assetLabel(activeColorReference.kind, language)} · ${activeColorReference.fileName}` : (isEnglish ? "Not selected" : "尚未选择")}
         detail={isRefineMode ? (activeColorReference ? (isEnglish ? "The uploaded colour/material reference has priority." : "上传的颜色质感参考优先；未上传时沿用已有文字图层的颜色、纹理与字体。") : (isEnglish ? "Without an override, the existing text layer supplies lettering, colour and texture." : "未上传覆盖参考时，系统只沿用已有文字图层的字形、颜色和纹理。")) : (activeColorReference ? (isEnglish ? "This reference sets colour, material and ornaments. Glyph references do not override it." : "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。") : (isEnglish ? "The latest top sticker is inherited when available; upload an override any time." : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。"))}
       />
+      <div className="generation-action-row">
+        <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || isRefineMode || !typography.text.trim()}>
+          {isGenerating ? (isEnglish ? "Generating..." : "正在生成…") : (isEnglish ? "Generate with OFOX" : "使用 OFOX 生成文字图层")}
+        </button>
+        <p>{isRefineMode ? (isEnglish ? "The first live demo currently supports Create New mode." : "首个在线 demo 先支持“新建文字图层”模式。") : generationMessage || (isEnglish ? "Enter text, then generate a real server-side image." : "输入文本后，可直接生成一张服务器端真实图片。")}</p>
+      </div>
       <AssetCollection language={language} assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? (isEnglish ? "Upload an existing text layer to refine it with new copy." : "上传一张已有文字图层后，可按新的文本内容微调。") : (isEnglish ? "Enter copy to generate, or upload layout and glyph references." : "输入文本即可生成；也可以上传布局文本图或字体参考。")} />
       <ToolOutputPreview language={language} title={isEnglish ? "Typography output preview" : "文字图层产出预览"} assets={assets} kinds={["typography"]} matte={typography.matte} />
     </ToolFrame>
