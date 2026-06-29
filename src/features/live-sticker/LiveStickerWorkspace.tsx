@@ -261,6 +261,10 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
   };
 
   const runGeneration = async (kind: BackgroundKind | "all") => {
+    if (!reference) {
+      setMessage(isEnglish ? "Add a room or colour reference before generation." : "请先添加直播间或色彩参考图。");
+      return;
+    }
     setRunningKind(kind);
     setMessage(isEnglish ? "OFOX is generating..." : "OFOX 正在生成…");
     try {
@@ -288,9 +292,9 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
       </div>
       <TypographyInstructionInput language={language} value={prompt} onChange={setPrompt} disabled={!projectReady || Boolean(runningKind)} />
       <div className="generation-action-row background-generation-actions">
-        <button type="button" onClick={() => void runGeneration("all")} disabled={!projectReady || Boolean(runningKind)}>{runningKind === "all" ? (isEnglish ? "Generating..." : "依次生成中…") : (isEnglish ? "Generate all" : "依次生成上 / 下 / 侧")}</button>
-        {(["top", "bottom", "side"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : kind === "bottom" ? "下贴" : "侧贴"}`}</button>)}
-        <p>{message || (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。")}</p>
+        <button type="button" onClick={() => void runGeneration("all")} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === "all" ? (isEnglish ? "Generating..." : "依次生成中…") : (isEnglish ? "Generate all" : "依次生成上 / 下 / 侧")}</button>
+        {(["top", "bottom", "side"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : kind === "bottom" ? "下贴" : "侧贴"}`}</button>)}
+        <p>{message || (!reference ? (isEnglish ? "Add a room or colour reference to enable OFOX generation." : "添加直播间或色彩参考图后即可启用 OFOX 生图。") : (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。"))}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => asset.kind === "reference")} empty={isEnglish ? "Add a reference image for later background work." : "添加一张参考图后，背景任务会从这里读取素材。"} />
       <ToolOutputPreview language={language} title={isEnglish ? "Background output preview" : "背景产出预览"} assets={assets} kinds={["top", "bottom", "side"]} />
