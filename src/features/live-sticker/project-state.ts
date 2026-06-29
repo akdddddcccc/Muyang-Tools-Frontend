@@ -9,6 +9,7 @@ export const COMPOSITION_OUTPUT = { width: 1080, height: 1920 } as const;
 
 export type ProjectAssetKind =
   | "reference"
+  | "color-reference"
   | "font-reference"
   | "layout-reference"
   | "top"
@@ -86,6 +87,7 @@ interface PersistedProject {
 
 export const assetKindLabels: Record<ProjectAssetKind, string> = {
   reference: "色彩纹理参考",
+  "color-reference": "文字颜色质感参考",
   "font-reference": "字体参考",
   "layout-reference": "布局文本参考",
   top: "上贴",

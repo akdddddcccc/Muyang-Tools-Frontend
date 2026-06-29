@@ -84,7 +84,7 @@ export function LiveStickerWorkspace({
       const result = await fetchCoreHealth();
       setHealth(result);
       setHealthState("online");
-      setHealthMessage("CORE READY · FOUNDATION");
+      setHealthMessage(`CORE READY · ${result.mode.toUpperCase()}`);
     } catch (error) {
       setHealth(null);
       setHealthState("offline");
@@ -304,9 +304,9 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
 
 function TypographyTool({ language, assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { language: "zh" | "en"; projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
-  const customColorReference = latestAsset(assets, "reference");
-  const activeColorReference = customColorReference ?? topAsset;
   const isRefineMode = typography.mode === "refine";
+  const customColorReference = latestAsset(assets, "color-reference");
+  const activeColorReference = customColorReference ?? (isRefineMode ? undefined : topAsset);
   const isEnglish = language === "en";
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationMessage, setGenerationMessage] = useState("");
@@ -343,7 +343,7 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
   };
 
   return (
-    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment. The draft is rendered on white or black for later cutout." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格。输出为纯白或纯黑底稿，供后续抠图。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
+    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment; Core removes the solid matte automatically." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格；Core 会自动去除生成实底。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
       <div className="typography-mode-switch" role="tablist" aria-label={isEnglish ? "Typography mode" : "文字图层模式"}>
         <button type="button" role="tab" aria-selected={!isRefineMode} className={!isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "create" })}>{isEnglish ? "Create new" : "新建文字图层"}</button>
         <button type="button" role="tab" aria-selected={isRefineMode} className={isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "refine" })}>{isEnglish ? "Refine existing" : "微调已有文字层"}</button>
@@ -353,7 +353,7 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
           <div className="tool-grid typography-refine-grid">
             <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} disabled={!projectReady} />
             <AssetUpload language={language} kind="typography" label={isEnglish ? "Existing text layer" : "已有文字图层"} help={isEnglish ? "Upload transparent or solid text art to learn its lettering, font, colour and texture." : "上传透明或实底文字图；它会学习字形、字体、颜色与纹理。"} onAddAsset={onAddAsset} disabled={!projectReady} />
-            <AssetUpload language={language} kind="reference" label={isEnglish ? "Colour/material override" : "颜色与质感覆盖参考"} help={isEnglish ? "Optional. When present it takes priority for colour, material and ornaments." : "非必填；上传后优先采用此图的颜色、材质与装饰。"} onAddAsset={onAddAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Colour/material override" : "颜色与质感覆盖参考"} help={isEnglish ? "Optional. When present it takes priority for colour, material and ornaments." : "非必填；上传后优先采用此图的颜色、材质与装饰。"} onAddAsset={onAddAsset} disabled={!projectReady} />
           </div>
           <div className="typography-matte-row">
             <div><strong>{isEnglish ? "Draft background" : "生成底稿"}</strong><small>{isEnglish ? "A solid matte makes the next automatic cutout reliable." : "输出为实底文字图，便于下一步自动抠图。"}</small></div>
@@ -367,7 +367,7 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         <>
           <div className="tool-grid two typography-input-grid">
             <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} onAddAsset={onAddAsset} disabled={!projectReady} allowLayoutReference />
-            <AssetUpload language={language} kind="reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "Overrides the top sticker. Otherwise the latest top sticker is inherited." : "上传后覆盖上贴；未上传时自动继承当前项目上贴。"} onAddAsset={onAddAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "Overrides the top sticker. Otherwise the latest top sticker is inherited." : "上传后覆盖上贴；未上传时自动继承当前项目上贴。"} onAddAsset={onAddAsset} disabled={!projectReady} />
           </div>
           <TypographyInstructionInput language={language} value={typography.instruction} onChange={(instruction) => onTypographyChange({ instruction })} disabled={!projectReady} />
           <section className="font-preset-section" aria-label={isEnglish ? "Default generation fonts" : "默认生图字体"}>
@@ -1072,7 +1072,7 @@ function ToolOutputPreview({ language, title, assets, kinds, matte }: { language
     <section className="tool-output-preview" aria-label={title}>
       <div className="output-preview-heading">
         <div><p>{isEnglish ? "OUTPUT PREVIEW" : "产出预览"}</p><h3>{title}</h3></div>
-        {matte ? <span className={`output-matte ${matte}`}>{matte === "white" ? (isEnglish ? "White matte" : "纯白底稿") : (isEnglish ? "Black matte" : "纯黑底稿")}</span> : null}
+        {matte ? <span className={`output-matte ${matte}`}>{isEnglish ? "Transparent PNG" : "已自动抠透明"}</span> : null}
       </div>
       <div className={`tool-output-grid count-${kinds.length}`}>
         {kinds.map((kind) => {
@@ -1096,6 +1096,7 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
   if (language === "zh") return assetKindLabels[kind];
   return {
     reference: "Colour/material reference",
+    "color-reference": "Typography colour/material reference",
     "font-reference": "Glyph reference",
     "layout-reference": "Layout text reference",
     top: "Top sticker",
