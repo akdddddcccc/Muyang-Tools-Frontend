@@ -368,7 +368,7 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         matte: typography.matte,
         instruction: typography.instruction || undefined,
         references: {
-          color: activeColorReference ? await assetReference(activeColorReference) : undefined,
+          color: activeColorReference ? await colorReference(activeColorReference) : undefined,
           font: isRefineMode ? undefined : await activeFontReference(typography.fontPresetKey, assets),
           layout: isRefineMode || !layoutReference ? undefined : await assetReference(layoutReference),
           typography: isRefineMode && existingTypography ? await assetReference(existingTypography) : undefined,
@@ -1402,6 +1402,11 @@ async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput>
   return { assetId: asset.id, mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
 }
 
+async function colorReference(asset: ProjectAsset): Promise<ImageReferenceInput> {
+  const blob = await resizeReference(asset.blob, false, "image/png");
+  return { assetId: asset.id, mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
+}
+
 async function activeFontReference(fontPresetKey: TypographyPresetKey, assets: ProjectAsset[]): Promise<ImageReferenceInput | undefined> {
   if (fontPresetKey === "custom-reference") {
     const custom = latestAsset(assets, "font-reference");
@@ -1453,7 +1458,7 @@ async function desaturateReference(source: Blob): Promise<Blob> {
   }
 }
 
-async function resizeReference(source: Blob, preserveAlpha: boolean): Promise<Blob> {
+async function resizeReference(source: Blob, preserveAlpha: boolean, outputMimeType?: "image/jpeg" | "image/png"): Promise<Blob> {
   const url = URL.createObjectURL(source);
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -1474,7 +1479,7 @@ async function resizeReference(source: Blob, preserveAlpha: boolean): Promise<Bl
       context.fillRect(0, 0, canvas.width, canvas.height);
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const mimeType = preserveAlpha ? "image/png" : "image/jpeg";
+    const mimeType = outputMimeType ?? (preserveAlpha ? "image/png" : "image/jpeg");
     return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("参考图片压缩失败。")), mimeType, 0.86));
   } finally {
     URL.revokeObjectURL(url);
