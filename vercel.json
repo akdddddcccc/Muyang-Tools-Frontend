@@ -1,8 +1,14 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci",
-  "buildCommand": "npm run build:live-sticker",
+  "buildCommand": "VITE_CORE_API_BASE_URL=/api npm run build:live-sticker",
   "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "http://muyang-tool.noteach.com.cn/api/:path*"
+    }
+  ],
   "redirects": [
     {
       "source": "/",
