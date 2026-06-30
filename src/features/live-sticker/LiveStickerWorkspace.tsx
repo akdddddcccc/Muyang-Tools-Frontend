@@ -160,6 +160,7 @@ export function LiveStickerWorkspace({
             onUndo={undoComposition}
             onRedo={redoComposition}
             onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
+            onActivateTool={setActiveTool}
             health={health}
             language={language}
           />
@@ -212,6 +213,7 @@ function ToolPanel({
   onUndo,
   onRedo,
   onTypographyChange,
+  onActivateTool,
   health,
   language,
 }: {
@@ -231,11 +233,12 @@ function ToolPanel({
   onUndo: () => void;
   onRedo: () => void;
   onTypographyChange: (settings: Partial<TypographySettings>) => void;
+  onActivateTool: (tool: ToolId) => void;
   health: CoreHealth | null;
   language: "zh" | "en";
 }) {
   if (activeTool === "background") {
-    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} />;
+    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} onActivateTool={onActivateTool} />;
   }
   if (activeTool === "typography") {
     return <TypographyTool language={language} assets={assets} onAddAsset={onAddAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
@@ -246,12 +249,23 @@ function ToolPanel({
   return <ExportTool language={language} assets={assets} />;
 }
 
-function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
+function BackgroundTool({ language, assets, onAddAsset, health, projectReady, onActivateTool }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean; onActivateTool: (tool: ToolId) => void }) {
   const isEnglish = language === "en";
   const [prompt, setPrompt] = useState("");
   const [runningKind, setRunningKind] = useState<BackgroundKind | "all" | "">("");
   const [message, setMessage] = useState("");
   const reference = latestAsset(assets, "reference");
+  const mounted = useRef(true);
+
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  const safeSetRunningKind = (value: BackgroundKind | "all" | "") => {
+    if (mounted.current) setRunningKind(value);
+  };
+
+  const safeSetMessage = (value: string) => {
+    if (mounted.current) setMessage(value);
+  };
 
   const generateOne = async (kind: BackgroundKind) => {
     const job = await createBackgroundJob({ kind, prompt: prompt || undefined, reference: reference ? await assetReference(reference) : undefined });
@@ -262,25 +276,38 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
 
   const runGeneration = async (kind: BackgroundKind | "all") => {
     if (!reference) {
-      setMessage(isEnglish ? "Add a room or colour reference before generation." : "请先添加直播间或色彩参考图。");
+      safeSetMessage(isEnglish ? "Add a room or colour reference before generation." : "请先添加直播间或色彩参考图。");
       return;
     }
-    setRunningKind(kind);
-    setMessage(isEnglish ? "OFOX is generating..." : "OFOX 正在生成…");
+    safeSetRunningKind(kind);
+    safeSetMessage(isEnglish ? "OFOX is generating..." : "OFOX 正在生成…");
     try {
       if (kind === "all") {
-        for (const item of ["top", "bottom", "side"] as BackgroundKind[]) {
-          setMessage(isEnglish ? `Generating ${item}...` : `正在生成${item === "top" ? "上贴" : item === "bottom" ? "下贴" : "侧贴"}…`);
-          await generateOne(item);
-        }
+        safeSetMessage(isEnglish ? "Generating top sticker first..." : "正在优先生成上贴，完成后会进入文字工具…");
+        await generateOne("top");
+        safeSetMessage(isEnglish ? "Top sticker is ready. Bottom and side continue in the background." : "上贴已完成；下贴与侧贴继续在后台生成。");
+        onActivateTool("typography");
+        void (async () => {
+          for (const item of ["bottom", "side"] as BackgroundKind[]) {
+            try {
+              safeSetMessage(isEnglish ? `Generating ${item} in the background...` : `后台继续生成${item === "bottom" ? "下贴" : "侧贴"}…`);
+              await generateOne(item);
+            } catch (error) {
+              console.warn(`Background ${item} generation failed`, error);
+            }
+          }
+          safeSetMessage(isEnglish ? "Background assets generated." : "背景贴片已生成完成。");
+          safeSetRunningKind("");
+        })();
+        return;
       } else {
         await generateOne(kind);
       }
-      setMessage(isEnglish ? "Generated and added to the project." : "生成成功，已加入当前项目。");
+      safeSetMessage(isEnglish ? "Generated and added to the project." : "生成成功，已加入当前项目。");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
+      safeSetMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
     } finally {
-      setRunningKind("");
+      if (kind !== "all") safeSetRunningKind("");
     }
   };
 
@@ -304,9 +331,10 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
 
 function TypographyTool({ language, assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { language: "zh" | "en"; projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
+  const projectReference = latestAsset(assets, "reference");
   const isRefineMode = typography.mode === "refine";
   const customColorReference = latestAsset(assets, "color-reference");
-  const activeColorReference = customColorReference ?? (isRefineMode ? undefined : topAsset);
+  const activeColorReference = customColorReference ?? (isRefineMode ? undefined : topAsset ?? projectReference);
   const isEnglish = language === "en";
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCuttingOut, setIsCuttingOut] = useState(false);
@@ -845,17 +873,14 @@ function LayerPositionReadout({ language, x, y }: { language: "zh" | "en"; x: nu
 function maskStyle(layer: CompositionLayer) {
   if (typeof document === "undefined") return {};
   if (layer.kind !== "top" && layer.kind !== "bottom") return {};
-  const size = 480;
-  const blur = Math.max(2, (size * layer.mask.feather) / 600);
-  const padding = Math.ceil(blur * 4);
-  const sourceCanvas = document.createElement("canvas");
-  sourceCanvas.width = size + padding * 2;
-  sourceCanvas.height = size + padding * 2;
-  const context = sourceCanvas.getContext("2d");
+  const width = 480;
+  const height = 480;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
   if (!context) return {};
 
-  const width = size;
-  const height = size;
   const fallbackY = layer.kind === "top"
     ? layer.y + layer.height * 0.72
     : layer.y + layer.height * 0.28;
@@ -865,34 +890,55 @@ function maskStyle(layer: CompositionLayer) {
     x: ((point.x - layer.x) / layer.width) * width,
     y: ((point.y - layer.y) / layer.height) * height,
   }));
-  context.save();
-  context.translate(padding, padding);
-  context.filter = `blur(${blur}px)`;
-  context.fillStyle = "#ffffff";
-  context.beginPath();
-  if (layer.kind === "top") {
-    context.moveTo(-padding, -padding);
-    context.lineTo(width + padding, -padding);
-    context.lineTo(width + padding, localPoints.at(-1)?.y ?? height * 0.72);
-    [...localPoints].reverse().forEach((point) => context.lineTo(point.x, point.y));
-    context.lineTo(-padding, localPoints[0]?.y ?? height * 0.72);
-  } else {
-    context.moveTo(-padding, localPoints[0]?.y ?? height * 0.28);
-    localPoints.forEach((point) => context.lineTo(point.x, point.y));
-    context.lineTo(width + padding, localPoints.at(-1)?.y ?? height * 0.28);
-    context.lineTo(width + padding, height + padding);
-    context.lineTo(-padding, height + padding);
+  const sorted = localPoints.sort((a, b) => a.x - b.x);
+  const feather = Math.max(1, (height * layer.mask.feather) / 520);
+  const alpha = context.createImageData(width, height);
+  for (let x = 0; x < width; x += 1) {
+    const boundary = boundaryYAt(sorted, x);
+    for (let y = 0; y < height; y += 1) {
+      const distance = layer.kind === "top" ? boundary - y : y - boundary;
+      const opacity = smoothMaskAlpha(distance, feather);
+      const index = (y * width + x) * 4;
+      alpha.data[index] = 255;
+      alpha.data[index + 1] = 255;
+      alpha.data[index + 2] = 255;
+      alpha.data[index + 3] = opacity;
+    }
   }
-  context.closePath();
-  context.fill();
-  context.restore();
-
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  canvas.getContext("2d")?.drawImage(sourceCanvas, padding, padding, size, size, 0, 0, size, size);
+  context.putImageData(alpha, 0, 0);
   const image = `url("${canvas.toDataURL("image/png")}")`;
-  return { maskImage: image, WebkitMaskImage: image, maskSize: "100% 100%", WebkitMaskSize: "100% 100%" };
+  return {
+    maskImage: image,
+    WebkitMaskImage: image,
+    maskMode: "alpha",
+    maskSize: "100% 100%",
+    WebkitMaskSize: "100% 100%",
+    maskRepeat: "no-repeat",
+    WebkitMaskRepeat: "no-repeat",
+    maskPosition: "center",
+    WebkitMaskPosition: "center",
+  };
+}
+
+function boundaryYAt(points: Array<{ x: number; y: number }>, x: number) {
+  if (points.length === 0) return 240;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    if (x >= start.x && x <= end.x) {
+      const ratio = end.x === start.x ? 0 : (x - start.x) / (end.x - start.x);
+      return start.y + (end.y - start.y) * ratio;
+    }
+  }
+  return x < points[0].x ? points[0].y : points.at(-1)?.y ?? points[0].y;
+}
+
+function smoothMaskAlpha(distance: number, feather: number) {
+  if (distance <= -feather) return 0;
+  if (distance >= feather) return 255;
+  const value = (distance + feather) / (feather * 2);
+  const eased = value * value * (3 - 2 * value);
+  return Math.round(eased * 255);
 }
 
 function defaultFadeLine(y: number, startX = 0, endX = 100) {
