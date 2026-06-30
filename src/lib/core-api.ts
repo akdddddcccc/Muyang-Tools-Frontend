@@ -50,7 +50,7 @@ export interface BackgroundGenerationJob extends TypographyGenerationJob {
   result?: TypographyGenerationJob["result"] & { kind?: BackgroundKind };
 }
 
-const coreBaseUrl = (import.meta.env.VITE_CORE_API_BASE_URL ?? "").replace(/\/$/, "");
+const coreBaseUrl = (import.meta.env.VITE_CORE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
 export function getCoreBaseUrl() {
   return coreBaseUrl;
