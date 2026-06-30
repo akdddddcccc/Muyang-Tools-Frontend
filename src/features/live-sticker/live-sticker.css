@@ -217,8 +217,11 @@
 .export-row small { color: #89a195; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .export-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid #2d3a43; border-radius: 7px; background: #111a21; }
 .export-footer > span { color: #c4d4c9; font-size: 13px; }
-.export-footer button { margin-left: auto; padding: 8px 12px; color: #5d7064; background: #1b2520; border: 1px solid #33453a; border-radius: 5px; cursor: not-allowed; }
+.export-footer button { padding: 8px 12px; color: #07100a; background: #7bf89c; border: 1px solid #7bf89c; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 700; }
+.export-footer button:first-of-type { margin-left: auto; }
+.export-footer button:disabled { color: #5d7064; background: #1b2520; border-color: #33453a; cursor: not-allowed; }
 .advanced-option { color: #61746a; font-size: 12px; }
+.export-message { flex: 1 1 100%; color: #89a195; font-size: 11px; line-height: 1.5; }
 @media (max-width: 1024px) {
   .tool-panel { max-width: none; }
   .font-preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

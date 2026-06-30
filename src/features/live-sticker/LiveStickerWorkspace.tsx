@@ -1003,11 +1003,28 @@ function pointsToSvgPath(points: Array<{ x: number; y: number }>) {
 
 function ExportTool({ language, assets }: { language: "zh" | "en"; assets: ProjectAsset[] }) {
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set());
-  const selectedCount = useMemo(() => assets.filter((asset) => selectedAssetIds.has(asset.id)).length, [assets, selectedAssetIds]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState("");
+  const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.has(asset.id)), [assets, selectedAssetIds]);
+  const selectedCount = selectedAssets.length;
   const isEnglish = language === "en";
+  const exportSelected = async () => {
+    if (!selectedAssets.length) return;
+    setIsExporting(true);
+    setExportMessage(isEnglish ? "Packing selected assets..." : "正在打包已选资产…");
+    try {
+      const zip = await makeProjectZip(selectedAssets, language);
+      downloadBlob(zip, `muyang-live-sticker-assets-${new Date().toISOString().slice(0, 10)}.zip`);
+      setExportMessage(isEnglish ? "ZIP exported." : "ZIP 已导出。");
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : (isEnglish ? "Export failed." : "导出失败。"));
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
-    <ToolFrame eyebrow="04 / EXPORT ASSETS" title={isEnglish ? "Export assets" : "导出资产"} detail={isEnglish ? "The export API is not connected yet. Asset selection already persists for future ZIP packaging." : "导出接口尚未接入。你现在可以真实勾选项目资产，后续 ZIP 打包会沿用这套选择状态。"}>
+    <ToolFrame eyebrow="04 / EXPORT ASSETS" title={isEnglish ? "Export assets" : "导出资产"} detail={isEnglish ? "Select project assets and export a local ZIP. Images are packed in the browser with a manifest file." : "选择项目资产后可直接导出本地 ZIP；图片会在浏览器内打包，并附带一份项目清单。"}>
       <div className="export-list">
         {assets.length === 0 ? <p className="empty-copy">{isEnglish ? "There are no project assets to export." : "还没有可导出的项目资产。"}</p> : assets.map((asset) => {
           const selected = selectedAssetIds.has(asset.id);
@@ -1031,8 +1048,11 @@ function ExportTool({ language, assets }: { language: "zh" | "en"; assets: Proje
       </div>
       <div className="export-footer">
         <span>{isEnglish ? `${selectedCount} assets selected` : `${selectedCount} 个资产已选择`}</span>
-        <button disabled>{isEnglish ? "Export ZIP" : "批量导出 ZIP"}</button>
+        <button type="button" disabled={!assets.length || isExporting} onClick={() => setSelectedAssetIds(new Set(assets.map((asset) => asset.id)))}>{isEnglish ? "Select all" : "全选"}</button>
+        <button type="button" disabled={!selectedCount || isExporting} onClick={() => setSelectedAssetIds(new Set())}>{isEnglish ? "Clear" : "清空"}</button>
+        <button type="button" disabled={!selectedCount || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export ZIP" : "导出 ZIP")}</button>
         <label className="advanced-option"><input type="checkbox" disabled /> {isEnglish ? "Project configuration JSON (advanced later)" : "项目配置 JSON（后期高级功能）"}</label>
+        <small className="export-message">{exportMessage || (isEnglish ? "The manifest records asset kind, file name and size." : "清单会记录素材类型、文件名与大小。")}</small>
       </div>
     </ToolFrame>
   );
@@ -1231,6 +1251,139 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
     typography: "Typography",
     "base-image": "Room background",
   }[kind];
+}
+
+async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en") {
+  const usedNames = new Map<string, number>();
+  const files = await Promise.all(assets.map(async (asset, index) => ({
+    name: uniqueZipName(`${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${asset.fileName || asset.kind}.${extensionForAsset(asset)}`, usedNames),
+    bytes: new Uint8Array(await asset.blob.arrayBuffer()),
+  })));
+  const manifest = {
+    exportedAt: new Date().toISOString(),
+    outputSize: COMPOSITION_OUTPUT,
+    assets: assets.map((asset) => ({
+      id: asset.id,
+      kind: asset.kind,
+      label: assetLabel(asset.kind, language),
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      trimmed: asset.trimmed,
+      createdAt: asset.createdAt,
+    })),
+  };
+  files.push({ name: "project-manifest.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
+  return new Blob([createStoredZip(files)], { type: "application/zip" });
+}
+
+function uniqueZipName(name: string, usedNames: Map<string, number>) {
+  const cleaned = name.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim() || "asset";
+  const count = usedNames.get(cleaned) ?? 0;
+  usedNames.set(cleaned, count + 1);
+  if (count === 0) return cleaned;
+  const dot = cleaned.lastIndexOf(".");
+  return dot > 0 ? `${cleaned.slice(0, dot)}-${count + 1}${cleaned.slice(dot)}` : `${cleaned}-${count + 1}`;
+}
+
+function extensionForAsset(asset: ProjectAsset) {
+  const fileExtension = asset.fileName.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  if (fileExtension) return fileExtension;
+  if (asset.mimeType.includes("jpeg")) return "jpg";
+  if (asset.mimeType.includes("png")) return "png";
+  if (asset.mimeType.includes("webp")) return "webp";
+  return "bin";
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function createStoredZip(files: Array<{ name: string; bytes: Uint8Array }>) {
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  const now = new Date();
+  const dosTime = ((now.getHours() & 31) << 11) | ((now.getMinutes() & 63) << 5) | ((Math.floor(now.getSeconds() / 2)) & 31);
+  const dosDate = (((now.getFullYear() - 1980) & 127) << 9) | (((now.getMonth() + 1) & 15) << 5) | (now.getDate() & 31);
+
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const crc = crc32(file.bytes);
+    const local = new Uint8Array(30 + name.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034b50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(10, dosTime, true);
+    localView.setUint16(12, dosDate, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, file.bytes.length, true);
+    localView.setUint32(22, file.bytes.length, true);
+    localView.setUint16(26, name.length, true);
+    local.set(name, 30);
+    chunks.push(local, file.bytes);
+
+    const header = new Uint8Array(46 + name.length);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 20, true);
+    view.setUint16(8, 0x0800, true);
+    view.setUint16(10, 0, true);
+    view.setUint16(12, dosTime, true);
+    view.setUint16(14, dosDate, true);
+    view.setUint32(16, crc, true);
+    view.setUint32(20, file.bytes.length, true);
+    view.setUint32(24, file.bytes.length, true);
+    view.setUint16(28, name.length, true);
+    view.setUint32(42, offset, true);
+    header.set(name, 46);
+    central.push(header);
+    offset += local.length + file.bytes.length;
+  }
+
+  const centralSize = central.reduce((sum, item) => sum + item.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  return concatBytes([...chunks, ...central, end]);
+}
+
+function concatBytes(chunks: Uint8Array[]) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return merged;
+}
+
+const crcTable = new Uint32Array(256).map((_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 function latestAsset(assets: ProjectAsset[], kind: ProjectAssetKind) {
