@@ -45,6 +45,19 @@ const fontPresets: Array<{ key: TypographyPresetKey; label: string; detail: stri
   { key: "custom-reference", label: "自定义字体字形", detail: "上传去色字体图，只学习字形、笔画与局部纹理", englishLabel: "Custom glyph reference", englishDetail: "Upload a desaturated reference for glyphs and strokes" },
 ];
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
 export function LiveStickerWorkspace({
   language,
   onLanguageChange,
@@ -521,13 +534,15 @@ const compositionNodeTypes = { asset: FlowAssetNode, output: FlowOutputNode };
 const compositionEdgeTypes = { octopus: OctopusEdge };
 
 function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLayer, projectReady }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
+  const compactFlow = useMediaQuery("(max-width: 520px)");
+  const flowPositions = compactFlow ? compactFlowNodePositions : desktopFlowNodePositions;
   const [nodes, setNodes, onNodesChange] = useNodesState([
-    { id: "base-image", type: "asset", position: { x: 24, y: 38 }, data: { kind: "base-image", label: "直播间底图" } },
-    { id: "top", type: "asset", position: { x: 190, y: 38 }, data: { kind: "top", label: "上贴" } },
-    { id: "side", type: "asset", position: { x: 356, y: 38 }, data: { kind: "side", label: "侧贴" } },
-    { id: "bottom", type: "asset", position: { x: 522, y: 38 }, data: { kind: "bottom", label: "下贴" } },
-    { id: "typography", type: "asset", position: { x: 688, y: 38 }, data: { kind: "typography", label: "文字图层" } },
-    { id: "merge-output", type: "output", position: { x: 354, y: 216 }, data: { label: "融合输出", detail: "拖入画板继续微调" } },
+    { id: "base-image", type: "asset", position: flowPositions["base-image"], data: { kind: "base-image", label: "直播间底图" } },
+    { id: "top", type: "asset", position: flowPositions.top, data: { kind: "top", label: "上贴" } },
+    { id: "side", type: "asset", position: flowPositions.side, data: { kind: "side", label: "侧贴" } },
+    { id: "bottom", type: "asset", position: flowPositions.bottom, data: { kind: "bottom", label: "下贴" } },
+    { id: "typography", type: "asset", position: flowPositions.typography, data: { kind: "typography", label: "文字图层" } },
+    { id: "merge-output", type: "output", position: flowPositions["merge-output"], data: { label: "融合输出", detail: "拖入画板继续微调" } },
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([
     "base-image", "top", "side", "bottom", "typography",
@@ -552,6 +567,11 @@ function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLa
     setEdges((current) => addEdge({ ...connection, type: "octopus", animated: true }, current));
   }, [setEdges]);
 
+  useEffect(() => {
+    const positions = compactFlow ? compactFlowNodePositions : desktopFlowNodePositions;
+    setNodes((current) => current.map((node) => ({ ...node, position: positions[node.id as keyof typeof positions] ?? node.position })));
+  }, [compactFlow, setNodes]);
+
   const onNodeDragStop = useCallback((_event: unknown, node: { id: string; position: { x: number; y: number } }) => {
     if (node.id === "merge-output") return;
     const position = { x: Math.min(770, Math.max(10, node.position.x)), y: Math.min(150, Math.max(14, node.position.y)) };
@@ -574,7 +594,7 @@ function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLa
           fitView
           fitViewOptions={{ padding: 0.15 }}
           snapToGrid
-          snapGrid={[16, 16]}
+          snapGrid={compactFlow ? [8, 8] : [16, 16]}
           nodesConnectable
           minZoom={0.7}
           maxZoom={1.5}
@@ -587,6 +607,24 @@ function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLa
     </div>
   );
 }
+
+const desktopFlowNodePositions = {
+  "base-image": { x: 24, y: 38 },
+  top: { x: 190, y: 38 },
+  side: { x: 356, y: 38 },
+  bottom: { x: 522, y: 38 },
+  typography: { x: 688, y: 38 },
+  "merge-output": { x: 354, y: 216 },
+};
+
+const compactFlowNodePositions = {
+  "base-image": { x: 18, y: 20 },
+  top: { x: 142, y: 20 },
+  side: { x: 266, y: 20 },
+  bottom: { x: 80, y: 142 },
+  typography: { x: 204, y: 142 },
+  "merge-output": { x: 94, y: 284 },
+};
 
 function FlowAssetNode({ data }: NodeProps) {
   const node = data as FlowAssetNodeData;
