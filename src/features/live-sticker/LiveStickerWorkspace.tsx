@@ -1,7 +1,7 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { createBackgroundJob, createTypographyJob, fetchCoreHealth, getCoreBaseUrl, type BackgroundKind, type CoreHealth, type ImageReferenceInput } from "../../lib/core-api";
+import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchCoreHealth, getCoreBaseUrl, type BackgroundKind, type CoreHealth, type ImageReferenceInput } from "../../lib/core-api";
 import {
   assetKindLabels,
   COMPOSITION_OUTPUT,
@@ -297,7 +297,7 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
         <p>{message || (!reference ? (isEnglish ? "Add a room or colour reference to enable OFOX generation." : "添加直播间或色彩参考图后即可启用 OFOX 生图。") : (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。"))}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => asset.kind === "reference")} empty={isEnglish ? "Add a reference image for later background work." : "添加一张参考图后，背景任务会从这里读取素材。"} />
-      <ToolOutputPreview language={language} title={isEnglish ? "Background output preview" : "背景产出预览"} assets={assets} kinds={["top", "bottom", "side"]} />
+      <BackgroundOutputPreview language={language} assets={assets} runningKind={runningKind} onRegenerate={runGeneration} />
     </ToolFrame>
   );
 }
@@ -309,7 +309,9 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
   const activeColorReference = customColorReference ?? (isRefineMode ? undefined : topAsset);
   const isEnglish = language === "en";
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCuttingOut, setIsCuttingOut] = useState(false);
   const [generationMessage, setGenerationMessage] = useState("");
+  const [cutoutMessage, setCutoutMessage] = useState("");
 
   const generateTypography = async () => {
     const layoutReference = latestAsset(assets, "layout-reference");
@@ -333,8 +335,9 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
       });
       if (job.status === "failed") throw new Error(job.error?.message || "Typography generation failed.");
       if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");
-      await onAddAsset(await resultFile(job.result, `typography-${job.id}.png`), "typography");
-      setGenerationMessage(isEnglish ? "Generated and added to the output preview." : "生成成功，已加入下方产出预览。");
+      await onAddAsset(await resultFile(job.result, `typography-draft-${job.id}.png`), "typography-draft");
+      setCutoutMessage("");
+      setGenerationMessage(isEnglish ? "Solid-matte draft generated. Cut it out from the output preview when needed." : "文字实底稿已生成；需要透明底时，请在产出预览中执行抠图。");
     } catch (error) {
       setGenerationMessage(error instanceof Error ? error.message : (isEnglish ? "Generation failed." : "生成失败。"));
     } finally {
@@ -342,8 +345,24 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
     }
   };
 
+  const runCutout = async () => {
+    const draft = latestAsset(assets, "typography-draft");
+    if (!draft) return;
+    setIsCuttingOut(true);
+    setCutoutMessage(isEnglish ? "Removing the solid matte..." : "正在抠除实底…");
+    try {
+      const payload = await cutoutTypography(await assetReference(draft));
+      await onAddAsset(await resultFile(payload.result, `typography-${Date.now()}.png`), "typography");
+      setCutoutMessage(isEnglish ? "Transparent PNG added to the project." : "透明 PNG 已加入当前项目与融合画板。");
+    } catch (error) {
+      setCutoutMessage(error instanceof Error ? error.message : (isEnglish ? "Cutout failed." : "文字抠图失败。"));
+    } finally {
+      setIsCuttingOut(false);
+    }
+  };
+
   return (
-    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment; Core removes the solid matte automatically." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格；Core 会自动去除生成实底。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
+    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment. Cutout is a separate output action." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格；透明抠图在产出预览中单独执行。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
       <div className="typography-mode-switch" role="tablist" aria-label={isEnglish ? "Typography mode" : "文字图层模式"}>
         <button type="button" role="tab" aria-selected={!isRefineMode} className={!isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "create" })}>{isEnglish ? "Create new" : "新建文字图层"}</button>
         <button type="button" role="tab" aria-selected={isRefineMode} className={isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "refine" })}>{isEnglish ? "Refine existing" : "微调已有文字层"}</button>
@@ -402,10 +421,10 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || (!typography.text.trim() && !latestAsset(assets, "layout-reference")) || (isRefineMode && !latestAsset(assets, "typography"))}>
           {isGenerating ? (isEnglish ? "Generating..." : "正在生成…") : isRefineMode ? (isEnglish ? "Refine with OFOX" : "使用 OFOX 微调文字图层") : (isEnglish ? "Generate with OFOX" : "使用 OFOX 生成文字图层")}
         </button>
-        <p>{generationMessage || (isRefineMode ? (isEnglish ? "Upload an existing typography layer, enter replacement text, then refine it." : "上传已有文字层并填写替换文本后即可微调。") : (isEnglish ? "Enter text, then generate a real transparent server-side image." : "输入文本后，可直接生成并自动抠出透明文字图层。"))}</p>
+        <p>{generationMessage || (isRefineMode ? (isEnglish ? "Upload an existing typography layer, enter replacement text, then refine it." : "上传已有文字层并填写替换文本后即可微调。") : (isEnglish ? "The editable text above is generated as a solid-matte draft first." : "上方文本可直接复制或修改；生成后先得到实底文字稿。"))}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? (isEnglish ? "Upload an existing text layer to refine it with new copy." : "上传一张已有文字图层后，可按新的文本内容微调。") : (isEnglish ? "Enter copy to generate, or upload layout and glyph references." : "输入文本即可生成；也可以上传布局文本图或字体参考。")} />
-      <ToolOutputPreview language={language} title={isEnglish ? "Typography output preview" : "文字图层产出预览"} assets={assets} kinds={["typography"]} matte={typography.matte} />
+      <TypographyOutputPreview language={language} assets={assets} isCuttingOut={isCuttingOut} message={cutoutMessage} onCutout={runCutout} />
     </ToolFrame>
   );
 }
@@ -627,6 +646,7 @@ function CompositionCanvas({
     if (mode !== "select") return;
     if (event.button !== 0) return;
     event.preventDefault();
+    event.currentTarget.focus();
     onSelectLayer(layer.id);
     if (layer.kind !== "side") return;
     onBeginInteraction();
@@ -1066,27 +1086,48 @@ function AssetCollection({ language, assets, empty }: { language: "zh" | "en"; a
   return assets.length === 0 ? <p className="empty-copy">{empty}</p> : <div className="asset-collection">{assets.map((asset) => <img key={asset.id} src={asset.previewUrl} alt={asset.fileName} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`} />)}</div>;
 }
 
-function ToolOutputPreview({ language, title, assets, kinds, matte }: { language: "zh" | "en"; title: string; assets: ProjectAsset[]; kinds: ProjectAssetKind[]; matte?: "white" | "black" }) {
+function BackgroundOutputPreview({ language, assets, runningKind, onRegenerate }: { language: "zh" | "en"; assets: ProjectAsset[]; runningKind: BackgroundKind | "all" | ""; onRegenerate: (kind: BackgroundKind | "all") => Promise<void> }) {
   const isEnglish = language === "en";
   return (
-    <section className="tool-output-preview" aria-label={title}>
-      <div className="output-preview-heading">
-        <div><p>{isEnglish ? "OUTPUT PREVIEW" : "产出预览"}</p><h3>{title}</h3></div>
-        {matte ? <span className={`output-matte ${matte}`}>{isEnglish ? "Transparent PNG" : "已自动抠透明"}</span> : null}
-      </div>
-      <div className={`tool-output-grid count-${kinds.length}`}>
-        {kinds.map((kind) => {
+    <section className="tool-output-preview background-output-preview" aria-label={isEnglish ? "Background output preview" : "背景产出预览"}>
+      <div className="output-preview-heading"><div><p>OUTPUT</p><h3>{isEnglish ? "Sticker output · 1080 × 1920" : "贴片输出 · 1080 × 1920"}</h3></div></div>
+      <div className="background-output-stage">
+        <span className="background-output-size">1080 × 1920</span>
+        {(["top", "side", "bottom"] as BackgroundKind[]).map((kind) => {
           const asset = latestAsset(assets, kind);
+          const label = assetLabel(kind, language);
           return (
-            <article className={`tool-output-card ${kind}`} key={kind}>
-              <span>{assetLabel(kind, language)}</span>
-              <div className="tool-output-surface">
-                {asset ? <img src={asset.previewUrl} alt={asset.fileName} /> : <small>{isEnglish ? "No output yet" : "暂无产出"}</small>}
-              </div>
-              <small title={asset?.fileName}>{asset ? asset.fileName : (isEnglish ? "Generated assets will appear here" : "生成后的资产会显示在这里")}</small>
+            <article className={`background-output-slot ${kind}`} key={kind}>
+              <span>{label}</span>
+              {asset ? <img src={asset.previewUrl} alt={asset.fileName} /> : <small>{isEnglish ? "Waiting for output" : "等待产出"}</small>}
+              <button type="button" onClick={() => void onRegenerate(kind)} disabled={Boolean(runningKind)}>{runningKind === kind || runningKind === "all" ? (isEnglish ? "Generating..." : "生成中…") : asset ? (isEnglish ? "Regenerate" : "重生") : (isEnglish ? "Generate" : "生成")}</button>
             </article>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function TypographyOutputPreview({ language, assets, isCuttingOut, message, onCutout }: { language: "zh" | "en"; assets: ProjectAsset[]; isCuttingOut: boolean; message: string; onCutout: () => Promise<void> }) {
+  const isEnglish = language === "en";
+  const draft = latestAsset(assets, "typography-draft");
+  const transparent = latestAsset(assets, "typography");
+  const currentTransparent = transparent && (!draft || Date.parse(transparent.createdAt) >= Date.parse(draft.createdAt)) ? transparent : undefined;
+  return (
+    <section className="tool-output-preview" aria-label={isEnglish ? "Typography output preview" : "文字图层产出预览"}>
+      <div className="output-preview-heading"><div><p>OUTPUT PREVIEW</p><h3>{isEnglish ? "Typography output" : "文字图层产出预览"}</h3></div></div>
+      <div className="typography-output-grid">
+        <article className="tool-output-card typography-draft">
+          <span>{isEnglish ? "Solid-matte draft" : "文字实底稿"}</span>
+          <div className="tool-output-surface">{draft ? <img src={draft.previewUrl} alt={draft.fileName} /> : <small>{isEnglish ? "Generate a draft first" : "请先生成文字实底稿"}</small>}</div>
+          <button className="output-action" type="button" disabled={!draft || isCuttingOut} onClick={() => void onCutout()}>{isCuttingOut ? (isEnglish ? "Cutting out..." : "正在抠图…") : (isEnglish ? "Remove matte" : "抠出透明底")}</button>
+        </article>
+        <article className="tool-output-card typography">
+          <span>{isEnglish ? "Transparent PNG" : "透明文字图层"}</span>
+          <div className="tool-output-surface">{currentTransparent ? <img src={currentTransparent.previewUrl} alt={currentTransparent.fileName} /> : <small>{isEnglish ? "No transparent output for this draft" : "当前实底稿尚未执行透明抠图"}</small>}</div>
+          <small>{message || (currentTransparent ? currentTransparent.fileName : (isEnglish ? "Optional output" : "可选产出"))}</small>
+        </article>
       </div>
     </section>
   );
@@ -1102,6 +1143,7 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
     top: "Top sticker",
     bottom: "Bottom sticker",
     side: "Side sticker",
+    "typography-draft": "Typography draft",
     typography: "Typography",
     "base-image": "Room background",
   }[kind];
@@ -1118,7 +1160,7 @@ async function resultFile(result: { url: string; fileName?: string; mimeType?: s
 }
 
 async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput> {
-  const preserveAlpha = asset.kind === "typography";
+  const preserveAlpha = asset.kind === "typography" || asset.kind === "typography-draft";
   const blob = await resizeReference(asset.blob, preserveAlpha);
   return { assetId: asset.id, mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
 }

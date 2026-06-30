@@ -81,6 +81,18 @@ export async function createTypographyJob(input: TypographyGenerationInput): Pro
   return payload;
 }
 
+export async function cutoutTypography(image: ImageReferenceInput): Promise<{ matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]> }> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/cutout`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image }),
+  });
+  const payload = await response.json().catch(() => ({})) as { matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]>; message?: string };
+  if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
+  return payload;
+}
+
 export async function createBackgroundJob(input: { kind: BackgroundKind; prompt?: string; reference?: ImageReferenceInput }): Promise<BackgroundGenerationJob> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
   const response = await fetch(`${coreBaseUrl}/v1/live-sticker/background/jobs`, {

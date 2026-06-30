@@ -15,6 +15,7 @@ export type ProjectAssetKind =
   | "top"
   | "bottom"
   | "side"
+  | "typography-draft"
   | "typography"
   | "base-image";
 
@@ -93,6 +94,7 @@ export const assetKindLabels: Record<ProjectAssetKind, string> = {
   top: "上贴",
   bottom: "下贴",
   side: "侧贴",
+  "typography-draft": "文字实底稿",
   typography: "文字图层",
   "base-image": "直播间底图",
 };
@@ -119,7 +121,7 @@ function createEmptyComposition(): CompositionDocument {
 }
 
 function createDefaultTypography(): TypographySettings {
-  return { fontPresetKey: "elegant-songti", text: "", instruction: "", mode: "create", matte: "white" };
+  return { fontPresetKey: "elegant-songti", text: "NOBOOK · 618 狂欢季\n重走真理诞生路", instruction: "", mode: "create", matte: "white" };
 }
 
 function cloneComposition(composition: CompositionDocument): CompositionDocument {
@@ -282,7 +284,7 @@ export function useProjectWorkspace() {
         setAssets(restoredAssets);
         compositionRef.current = restoredComposition;
         setComposition(restoredComposition);
-        setTypography({ ...createDefaultTypography(), ...project.typography });
+        setTypography({ ...createDefaultTypography(), ...project.typography, text: project.typography?.text || createDefaultTypography().text });
       }
       ready.current = true;
       setPersistenceState("saved");
@@ -314,7 +316,14 @@ export function useProjectWorkspace() {
     const previewUrl = URL.createObjectURL(prepared.blob);
     urls.current.add(previewUrl);
     const asset: ProjectAsset = { id: makeAssetId(), kind, source: "uploaded", fileName: file.name, mimeType: prepared.blob.type || file.type, sizeBytes: prepared.blob.size, trimmed: prepared.trimmed, previewUrl, blob: prepared.blob, createdAt: new Date().toISOString() };
-    setAssets((current) => [...current, asset]);
+    setAssets((current) => {
+      if (kind !== "reference" && kind !== "color-reference") return [...current, asset];
+      current.filter((item) => item.kind === kind).forEach((item) => {
+        URL.revokeObjectURL(item.previewUrl);
+        urls.current.delete(item.previewUrl);
+      });
+      return [...current.filter((item) => item.kind !== kind), asset];
+    });
     setComposition((current) => {
       const next = addAssetToComposition(current, asset, imageAspect);
       compositionRef.current = next;
