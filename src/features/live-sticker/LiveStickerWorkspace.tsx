@@ -1214,14 +1214,52 @@ async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput>
 async function activeFontReference(fontPresetKey: TypographyPresetKey, assets: ProjectAsset[]): Promise<ImageReferenceInput | undefined> {
   if (fontPresetKey === "custom-reference") {
     const custom = latestAsset(assets, "font-reference");
-    return custom ? assetReference(custom) : undefined;
+    return custom ? desaturatedFontReference(custom.blob, custom.id) : undefined;
   }
   const preset = fontPresets.find((item) => item.key === fontPresetKey);
   if (!preset?.image) return undefined;
   const response = await fetch(preset.image);
   if (!response.ok) throw new Error("无法读取默认字体参考图。");
-  const blob = await resizeReference(await response.blob(), false);
+  const blob = await desaturateReference(await response.blob());
   return { mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
+}
+
+async function desaturatedFontReference(blob: Blob, assetId?: string): Promise<ImageReferenceInput> {
+  const desaturated = await desaturateReference(blob);
+  return { assetId, mimeType: desaturated.type, dataUrl: await blobToDataUrl(desaturated) };
+}
+
+async function desaturateReference(source: Blob): Promise<Blob> {
+  const url = URL.createObjectURL(source);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("无法读取字体参考图片。"));
+      element.src = url;
+    });
+    const maxDimension = 1536;
+    const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("无法处理字体参考图片。");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      const luminance = Math.round(0.2126 * pixels.data[index] + 0.7152 * pixels.data[index + 1] + 0.0722 * pixels.data[index + 2]);
+      pixels.data[index] = luminance;
+      pixels.data[index + 1] = luminance;
+      pixels.data[index + 2] = luminance;
+    }
+    context.putImageData(pixels, 0, 0);
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("字体参考去色失败。")), "image/png"));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function resizeReference(source: Blob, preserveAlpha: boolean): Promise<Blob> {
