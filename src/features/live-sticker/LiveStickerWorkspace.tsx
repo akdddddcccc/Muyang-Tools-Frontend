@@ -173,7 +173,6 @@ export function LiveStickerWorkspace({
             onUndo={undoComposition}
             onRedo={redoComposition}
             onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
-            onActivateTool={setActiveTool}
             health={health}
             language={language}
           />
@@ -226,7 +225,6 @@ function ToolPanel({
   onUndo,
   onRedo,
   onTypographyChange,
-  onActivateTool,
   health,
   language,
 }: {
@@ -246,12 +244,11 @@ function ToolPanel({
   onUndo: () => void;
   onRedo: () => void;
   onTypographyChange: (settings: Partial<TypographySettings>) => void;
-  onActivateTool: (tool: ToolId) => void;
   health: CoreHealth | null;
   language: "zh" | "en";
 }) {
   if (activeTool === "background") {
-    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} onActivateTool={onActivateTool} />;
+    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} />;
   }
   if (activeTool === "typography") {
     return <TypographyTool language={language} assets={assets} onAddAsset={onAddAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
@@ -262,7 +259,7 @@ function ToolPanel({
   return <ExportTool language={language} assets={assets} />;
 }
 
-function BackgroundTool({ language, assets, onAddAsset, health, projectReady, onActivateTool }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean; onActivateTool: (tool: ToolId) => void }) {
+function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
   const isEnglish = language === "en";
   const [prompt, setPrompt] = useState("");
   const [runningKind, setRunningKind] = useState<BackgroundKind | "all" | "">("");
@@ -296,10 +293,9 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady, on
     safeSetMessage(isEnglish ? "OFOX is generating..." : "OFOX 正在生成…");
     try {
       if (kind === "all") {
-        safeSetMessage(isEnglish ? "Generating top sticker first..." : "正在优先生成上贴，完成后会进入文字工具…");
+        safeSetMessage(isEnglish ? "Generating top sticker first..." : "正在优先生成上贴…");
         await generateOne("top");
         safeSetMessage(isEnglish ? "Top sticker is ready. Bottom and side continue in the background." : "上贴已完成；下贴与侧贴继续在后台生成。");
-        onActivateTool("typography");
         void (async () => {
           for (const item of ["bottom", "side"] as BackgroundKind[]) {
             try {
