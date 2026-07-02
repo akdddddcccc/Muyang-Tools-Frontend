@@ -12,6 +12,7 @@ export function TypographyLab() {
   const [message, setMessage] = useState("正在检查实验 Core…");
   const [draftUrl, setDraftUrl] = useState("");
   const [transparentUrl, setTransparentUrl] = useState("");
+  const [isPasteTarget, setIsPasteTarget] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Pick<TypographyGenerationJob, "renderStrategy" | "appliedPalette" | "analysisSummary">>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,6 +47,18 @@ export function TypographyLab() {
     setMessage("参考图已就绪，可以生成");
     setStatus("ready");
   };
+
+  useEffect(() => {
+    const pasteImage = (event: ClipboardEvent) => {
+      if (!isPasteTarget) return;
+      const image = Array.from(event.clipboardData?.items ?? []).find((item) => item.type.startsWith("image/"))?.getAsFile();
+      if (!image) return;
+      event.preventDefault();
+      chooseReference(image);
+    };
+    window.addEventListener("paste", pasteImage);
+    return () => window.removeEventListener("paste", pasteImage);
+  }, [isPasteTarget]);
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     chooseReference(event.target.files?.[0]);
@@ -95,9 +108,16 @@ export function TypographyLab() {
 
       <section className="typography-lab-grid">
         <div className="typography-lab-inputs">
-          <button className={`poster-upload${referencePreview ? " ready" : ""}`} type="button" onClick={() => inputRef.current?.click()}>
+          <button
+            className={`poster-upload${referencePreview ? " ready" : ""}${isPasteTarget ? " paste-ready" : ""}`}
+            type="button"
+            title="悬停后按 Ctrl / Cmd + V 粘贴图片"
+            onPointerEnter={() => setIsPasteTarget(true)}
+            onPointerLeave={() => setIsPasteTarget(false)}
+            onClick={() => inputRef.current?.click()}
+          >
             {referencePreview ? <img src={referencePreview} alt="成品海报参考" /> : <span>上传成品海报或直播背景参考</span>}
-            <small>{referenceFile?.name || "点击选择一张图片"}</small>
+            <small>{isPasteTarget ? "按 Ctrl / Cmd + V 粘贴图片" : referenceFile?.name || "点击选择一张图片"}</small>
           </button>
           <input ref={inputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={onFileChange} />
 
