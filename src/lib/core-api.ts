@@ -25,6 +25,7 @@ export interface TypographyGenerationInput {
   mode: "create" | "refine";
   matte: "white" | "black";
   instruction?: string;
+  studyPoster?: boolean;
   references?: {
     color?: ImageReferenceInput;
     font?: ImageReferenceInput;
@@ -42,6 +43,14 @@ export interface TypographyGenerationJob {
     url: string;
   };
   error?: { code: string; message: string };
+  renderStrategy?: string;
+  appliedPalette?: { primary: string; accent: string };
+  analysisSummary?: {
+    source: "finished-poster" | "color-reference";
+    brightness: number;
+    saturation: number;
+    contrast: number;
+  };
 }
 
 export type BackgroundKind = "top" | "bottom" | "side";

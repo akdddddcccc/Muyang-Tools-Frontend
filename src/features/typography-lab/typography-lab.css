@@ -1,0 +1,48 @@
+.typography-lab { min-height: 100vh; color: #edf4ef; background: #0b1015; }
+.typography-lab-header { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px 24px; border-bottom: 1px solid #26313a; background: #0d1318; }
+.typography-lab-header p, .typography-lab-header h1 { margin: 0; }
+.typography-lab-header p { color: #7bf89c; font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; }
+.typography-lab-header h1 { margin-top: 5px; font-size: 17px; letter-spacing: 0; }
+.typography-lab-header a { color: #b7c7bd; font-size: 12px; text-decoration: none; border-bottom: 1px solid #56665c; }
+.typography-lab-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); min-height: calc(100vh - 72px); }
+.typography-lab-inputs { padding: 24px; border-right: 1px solid #26313a; background: #10171d; }
+.poster-upload { width: 100%; min-height: 260px; display: grid; place-items: center; gap: 10px; overflow: hidden; padding: 14px; color: #9eb1a6; background: #0b1116; border: 1px dashed #496054; border-radius: 6px; cursor: pointer; }
+.poster-upload.ready { border-style: solid; border-color: #347344; }
+.poster-upload img { width: 100%; max-height: 300px; object-fit: contain; }
+.poster-upload span { font-size: 14px; font-weight: 700; }
+.poster-upload small { color: #789084; overflow-wrap: anywhere; }
+.lab-text-input { display: grid; gap: 8px; margin-top: 18px; color: #9eb1a6; font-size: 12px; }
+.lab-text-input textarea { width: 100%; resize: vertical; padding: 12px; color: #edf4ef; background: #0b1116; border: 1px solid #35434b; border-radius: 5px; font-family: inherit; font-size: 16px; line-height: 1.55; letter-spacing: 0; }
+.lab-generate { width: 100%; margin-top: 14px; padding: 12px; color: #07100a; background: #7bf89c; border: 0; border-radius: 5px; font-weight: 800; cursor: pointer; }
+.lab-generate:disabled { color: #6f8076; background: #26322b; cursor: not-allowed; }
+.lab-message { min-height: 20px; margin: 10px 0 0; color: #9eb1a6; font-size: 12px; line-height: 1.5; }
+.lab-message.error { color: #f0a287; }
+.lab-diagnostics { margin-top: 20px; padding-top: 16px; border-top: 1px solid #2d3941; }
+.lab-diagnostics p { margin: 0 0 10px; color: #edf4ef; font-size: 12px; font-weight: 700; }
+.palette-row, .profile-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.palette-row span { width: 24px; height: 24px; border: 1px solid #75857b; border-radius: 3px; }
+.palette-row code, .profile-row span { color: #9eb1a6; font-size: 10px; }
+.profile-row { margin-top: 10px; }
+.profile-row span { padding: 4px 6px; border: 1px solid #34423a; border-radius: 3px; }
+.lab-diagnostics small { display: block; margin-top: 10px; color: #657a6f; overflow-wrap: anywhere; }
+.typography-lab-results { display: grid; grid-template-columns: minmax(320px, 1.15fr) minmax(260px, .85fr); gap: 20px; align-items: start; padding: 24px; }
+.typography-lab-results section > p { margin: 0 0 9px; color: #8fa398; font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; }
+.poster-composite, .draft-preview { position: relative; display: grid; place-items: center; overflow: hidden; min-height: 560px; color: #667970; background: #111820; border: 1px solid #2d3941; border-radius: 6px; }
+.poster-base { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: contain; }
+.poster-type { position: absolute; left: 10%; top: 38%; width: 80%; height: 24%; object-fit: contain; }
+.draft-preview img { width: 100%; height: 100%; object-fit: contain; }
+@media (max-width: 900px) {
+  .typography-lab-grid { grid-template-columns: 1fr; }
+  .typography-lab-inputs { border-right: 0; border-bottom: 1px solid #26313a; }
+  .typography-lab-results { grid-template-columns: 1fr; }
+  .poster-composite, .draft-preview { min-height: 440px; }
+}
+@media (max-width: 560px) {
+  .typography-lab-header { align-items: flex-start; padding: 12px 14px; }
+  .typography-lab-header h1 { font-size: 15px; }
+  .typography-lab-grid, .typography-lab-results { display: block; }
+  .typography-lab-inputs, .typography-lab-results { padding: 14px; }
+  .typography-lab-results section + section { margin-top: 18px; }
+  .poster-upload { min-height: 210px; }
+  .poster-composite, .draft-preview { min-height: 420px; }
+}
