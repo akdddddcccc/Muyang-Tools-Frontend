@@ -26,6 +26,7 @@ export interface TypographyGenerationInput {
   matte: "white" | "black";
   instruction?: string;
   studyPoster?: boolean;
+  deferMaterial?: boolean;
   references?: {
     color?: ImageReferenceInput;
     font?: ImageReferenceInput;
@@ -47,10 +48,20 @@ export interface TypographyGenerationJob {
   appliedPalette?: { primary: string; accent: string };
   analysisSummary?: {
     source: "finished-poster" | "color-reference";
-    brightness: number;
-    saturation: number;
-    contrast: number;
+    brightness?: number;
+    saturation?: number;
+    contrast?: number;
+    averageLuminanceDistance?: number;
+    minimumLuminanceDistance?: number;
+    sampledRegions?: number;
   };
+}
+
+export interface TypographyPlacement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export type BackgroundKind = "top" | "bottom" | "side";
@@ -99,6 +110,23 @@ export async function cutoutTypography(image: ImageReferenceInput): Promise<{ ma
   });
   const payload = await response.json().catch(() => ({})) as { matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]>; message?: string };
   if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
+  return payload;
+}
+
+export async function materializeTypography(input: {
+  image: ImageReferenceInput;
+  background: ImageReferenceInput;
+  matte: "white" | "black";
+  placement: TypographyPlacement;
+}): Promise<TypographyGenerationJob & { placement: TypographyPlacement }> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/materialize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => ({})) as TypographyGenerationJob & { placement: TypographyPlacement; message?: string };
+  if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
 }
 

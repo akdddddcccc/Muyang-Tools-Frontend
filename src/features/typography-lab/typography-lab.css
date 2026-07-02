@@ -16,6 +16,8 @@
 .lab-text-input textarea { width: 100%; resize: vertical; padding: 12px; color: #edf4ef; background: #0b1116; border: 1px solid #35434b; border-radius: 5px; font-family: inherit; font-size: 16px; line-height: 1.55; letter-spacing: 0; }
 .lab-generate { width: 100%; margin-top: 14px; padding: 12px; color: #07100a; background: #7bf89c; border: 0; border-radius: 5px; font-weight: 800; cursor: pointer; }
 .lab-generate:disabled { color: #6f8076; background: #26322b; cursor: not-allowed; }
+.lab-adapt { width: 100%; margin-top: 8px; padding: 11px; color: #dff9e6; background: #16251c; border: 1px solid #4d8b5c; border-radius: 5px; font-weight: 750; cursor: pointer; }
+.lab-adapt:disabled { color: #64766b; background: #151d19; border-color: #2b3a31; cursor: not-allowed; }
 .lab-message { min-height: 20px; margin: 10px 0 0; color: #9eb1a6; font-size: 12px; line-height: 1.5; }
 .lab-message.error { color: #f0a287; }
 .lab-diagnostics { margin-top: 20px; padding-top: 16px; border-top: 1px solid #2d3941; }
@@ -28,15 +30,21 @@
 .lab-diagnostics small { display: block; margin-top: 10px; color: #657a6f; overflow-wrap: anywhere; }
 .typography-lab-results { display: grid; grid-template-columns: minmax(320px, 1.15fr) minmax(260px, .85fr); gap: 20px; align-items: start; padding: 24px; }
 .typography-lab-results section > p { margin: 0 0 9px; color: #8fa398; font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .09em; }
-.poster-composite, .draft-preview { position: relative; display: grid; place-items: center; overflow: hidden; min-height: 560px; color: #667970; background: #111820; border: 1px solid #2d3941; border-radius: 6px; }
+.poster-composite, .draft-preview { position: relative; display: grid; place-items: center; overflow: hidden; color: #667970; background: #111820; border: 1px solid #2d3941; border-radius: 6px; }
+.poster-composite { width: 100%; min-height: 320px; touch-action: none; }
+.draft-preview { min-height: 560px; }
 .poster-base { width: 100%; height: 100%; position: absolute; inset: 0; object-fit: contain; }
-.poster-type { position: absolute; left: 10%; top: 38%; width: 80%; height: 24%; object-fit: contain; }
+.poster-type { position: absolute; z-index: 2; display: grid; place-items: center; border: 1px dashed rgba(123, 248, 156, .8); cursor: grab; user-select: none; touch-action: none; }
+.poster-type:active { cursor: grabbing; }
+.poster-type img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.poster-type-resize { position: absolute; right: -7px; bottom: -7px; width: 15px; height: 15px; padding: 0; background: #7bf89c; border: 2px solid #0b1015; border-radius: 2px; cursor: nwse-resize; }
 .draft-preview img { width: 100%; height: 100%; object-fit: contain; }
 @media (max-width: 900px) {
   .typography-lab-grid { grid-template-columns: 1fr; }
   .typography-lab-inputs { border-right: 0; border-bottom: 1px solid #26313a; }
   .typography-lab-results { grid-template-columns: 1fr; }
-  .poster-composite, .draft-preview { min-height: 440px; }
+  .poster-composite { min-height: 280px; }
+  .draft-preview { min-height: 440px; }
 }
 @media (max-width: 560px) {
   .typography-lab-header { align-items: flex-start; padding: 12px 14px; }
@@ -45,5 +53,6 @@
   .typography-lab-inputs, .typography-lab-results { padding: 14px; }
   .typography-lab-results section + section { margin-top: 18px; }
   .poster-upload { min-height: 210px; }
-  .poster-composite, .draft-preview { min-height: 420px; }
+  .poster-composite { min-height: 260px; }
+  .draft-preview { min-height: 420px; }
 }
