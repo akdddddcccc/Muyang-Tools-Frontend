@@ -37,7 +37,7 @@ dist/
 | --- | --- | --- |
 | `VITE_CORE_API_BASE_URL` | 不设置 | `/api` |
 
-未设置时页面仅显示 Core 未连接，仍可用于前端交互和本地项目数据验收。当前 Vercel 使用 `/api` 同源代理转发到 `http://muyang-tool.noteach.com.cn/api/`，避免 HTTPS 页面直接请求 HTTP 后端造成浏览器 mixed content 拦截。`VITE_CORE_API_BASE_URL` 是浏览器可见地址，不得填入 OpenAI、OFOX、DeepSeek 或任何 Provider 的 Key。
+未设置时页面仅显示 Core 未连接，仍可用于前端交互和本地项目数据验收。当前 Vercel 使用 `/api` 同源函数代理转发到 `http://muyang-tool.noteach.com.cn/api/`，避免 HTTPS 页面直接请求 HTTP 后端造成浏览器 mixed content 拦截；不要使用裸 rewrite 直连 HTTP 后端，长请求和偶发连接会不稳定。`VITE_CORE_API_BASE_URL` 是浏览器可见地址，不得填入 OpenAI、OFOX、DeepSeek 或任何 Provider 的 Key。
 
 ## 上线顺序
 
@@ -49,7 +49,7 @@ dist/
 
 ## Core 边界
 
-Core 不随本次静态前端部署。当前临时生产方案是 Vercel `/api` rewrite 到单位 HTTP Core；如果后续有 HTTPS API 域名，可以让 `api.cmuyang23333.top` 指向该服务，再把 Vercel rewrite 或 `VITE_CORE_API_BASE_URL` 切过去。Core 必须限制 CORS 来源、提供 `GET /health`，且模型 Provider key 只保存在服务器环境变量中。
+Core 不随本次静态前端部署。当前临时生产方案是 Vercel `/api` 函数代理到单位 HTTP Core；如果后续有 HTTPS API 域名，可以让 `api.cmuyang23333.top` 指向该服务，再把代理目标或 `VITE_CORE_API_BASE_URL` 切过去。Core 必须限制 CORS 来源、提供 `GET /health`，且模型 Provider key 只保存在服务器环境变量中。
 
 ## 本地复核
 
