@@ -1,7 +1,7 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchCoreHealth, getCoreBaseUrl, type BackgroundKind, type CoreHealth, type ImageReferenceInput } from "../../lib/core-api";
+import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchBackgroundJob, fetchCoreHealth, fetchTypographyJob, getCoreBaseUrl, type BackgroundGenerationJob, type BackgroundKind, type CoreHealth, type ImageReferenceInput, type TypographyGenerationJob } from "../../lib/core-api";
 import {
   assetKindLabels,
   COMPOSITION_OUTPUT,
@@ -37,6 +37,23 @@ const tools: Array<{ id: ToolId; step: string; label: string; caption: string; e
 ];
 
 const publicAssetUrl = (path: string) => `${import.meta.env.BASE_URL}assets/${path}`;
+
+const sleep = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration));
+
+async function waitForJob<T extends TypographyGenerationJob | BackgroundGenerationJob>(
+  initialJob: T,
+  fetchJob: (id: string) => Promise<T>,
+  onUpdate?: (job: T, attempt: number) => void,
+) {
+  let job = initialJob;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    onUpdate?.(job, attempt);
+    if (job.status === "completed" || job.status === "failed") return job;
+    await sleep(attempt < 8 ? 1200 : 1800);
+    job = await fetchJob(job.id);
+  }
+  throw new Error("生成任务仍在处理中，请稍后刷新项目资产。");
+}
 
 const fontPresets: Array<{ key: TypographyPresetKey; label: string; detail: string; englishLabel: string; englishDetail: string; image?: string }> = [
   { key: "elegant-songti", label: "优雅宋体", detail: "明宋结构、细粗对比、克制的印刷感", englishLabel: "Elegant Songti", englishDetail: "Ming-style structure, measured contrast and print restraint", image: publicAssetUrl("font-presets/elegant-songti.png") },
@@ -286,7 +303,10 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
   };
 
   const generateOne = async (kind: BackgroundKind) => {
-    const job = await createBackgroundJob({ kind, prompt: prompt || undefined, reference: reference ? await assetReference(reference) : undefined });
+    const initialJob = await createBackgroundJob({ kind, prompt: prompt || undefined, reference: reference ? await assetReference(reference) : undefined });
+    const job = await waitForJob(initialJob, fetchBackgroundJob, (_job, attempt) => {
+      if (attempt > 0 && attempt % 8 === 0) safeSetMessage(isEnglish ? "Still generating, keeping the connection light..." : "仍在生成中，已切换为轻量轮询等待…");
+    });
     if (job.status === "failed") throw new Error(job.error?.message || "Background generation failed.");
     if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");
     await onAddAsset(await resultFile(job.result, `${kind}-${job.id}.jpg`), kind);
@@ -365,7 +385,7 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
     setIsGenerating(true);
     setGenerationMessage(isEnglish ? "OFOX is generating the first draft..." : "OFOX 正在生成首版文字图层…");
     try {
-      const job = await createTypographyJob({
+      const initialJob = await createTypographyJob({
         text: typography.text,
         fontPresetKey: typography.fontPresetKey,
         mode: typography.mode,
@@ -377,6 +397,10 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
           layout: isRefineMode || !layoutReference ? undefined : await assetReference(layoutReference),
           typography: isRefineMode && existingTypography ? await assetReference(existingTypography) : undefined,
         },
+      });
+      const job = await waitForJob(initialJob, fetchTypographyJob, (_job, attempt) => {
+        if (attempt === 1) setGenerationMessage(isEnglish ? "Generation job accepted. Waiting for OFOX..." : "生成任务已创建，正在等待 OFOX 返回…");
+        if (attempt > 0 && attempt % 8 === 0) setGenerationMessage(isEnglish ? "Still generating, polling the Core job..." : "仍在生成中，正在轮询 Core 任务状态…");
       });
       if (job.status === "failed") throw new Error(job.error?.message || "Typography generation failed.");
       if (!job.result?.url) throw new Error(isEnglish ? "The job completed without an image." : "任务已完成，但没有返回图片。");

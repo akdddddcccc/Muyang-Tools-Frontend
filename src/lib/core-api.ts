@@ -81,6 +81,14 @@ export async function createTypographyJob(input: TypographyGenerationInput): Pro
   return payload;
 }
 
+export async function fetchTypographyJob(id: string): Promise<TypographyGenerationJob> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/jobs/${id}`);
+  const payload = await response.json().catch(() => ({})) as TypographyGenerationJob & { message?: string };
+  if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
+  return payload;
+}
+
 export async function cutoutTypography(image: ImageReferenceInput): Promise<{ matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]> }> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
   const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/cutout`, {
@@ -100,6 +108,14 @@ export async function createBackgroundJob(input: { kind: BackgroundKind; prompt?
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+  const payload = await response.json().catch(() => ({})) as BackgroundGenerationJob & { message?: string };
+  if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
+  return payload;
+}
+
+export async function fetchBackgroundJob(id: string): Promise<BackgroundGenerationJob> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/background/jobs/${id}`);
   const payload = await response.json().catch(() => ({})) as BackgroundGenerationJob & { message?: string };
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
