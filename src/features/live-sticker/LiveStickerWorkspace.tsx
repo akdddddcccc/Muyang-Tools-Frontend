@@ -1438,7 +1438,7 @@ async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput>
 }
 
 async function colorReference(asset: ProjectAsset): Promise<ImageReferenceInput> {
-  const blob = await resizeReference(asset.blob, false, "image/png");
+  const blob = await resizeReference(asset.blob, false, "image/jpeg");
   return { assetId: asset.id, mimeType: blob.type, dataUrl: await blobToDataUrl(blob) };
 }
 
@@ -1469,7 +1469,7 @@ async function desaturateReference(source: Blob): Promise<Blob> {
       element.onerror = () => reject(new Error("无法读取字体参考图片。"));
       element.src = url;
     });
-    const maxDimension = 1536;
+    const maxDimension = 1024;
     const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -1487,7 +1487,7 @@ async function desaturateReference(source: Blob): Promise<Blob> {
       pixels.data[index + 2] = luminance;
     }
     context.putImageData(pixels, 0, 0);
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("字体参考去色失败。")), "image/png"));
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("字体参考去色失败。")), "image/jpeg", 0.78));
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -1502,7 +1502,7 @@ async function resizeReference(source: Blob, preserveAlpha: boolean, outputMimeT
       element.onerror = () => reject(new Error("无法读取参考图片。"));
       element.src = url;
     });
-    const maxDimension = 1536;
+    const maxDimension = preserveAlpha ? 1536 : 1024;
     const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -1515,7 +1515,7 @@ async function resizeReference(source: Blob, preserveAlpha: boolean, outputMimeT
     }
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const mimeType = outputMimeType ?? (preserveAlpha ? "image/png" : "image/jpeg");
-    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("参考图片压缩失败。")), mimeType, 0.86));
+    return await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("参考图片压缩失败。")), mimeType, mimeType === "image/jpeg" ? 0.78 : 0.86));
   } finally {
     URL.revokeObjectURL(url);
   }

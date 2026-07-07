@@ -1,6 +1,7 @@
 const targetBaseUrl = "http://muyang-tool.noteach.com.cn/api";
 
 export const config = {
+  maxDuration: 60,
   api: {
     bodyParser: {
       sizeLimit: "20mb",
@@ -24,7 +25,7 @@ async function fetchWithRetry(url, options) {
     try {
       const response = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(25_000),
+        signal: AbortSignal.timeout(45_000),
       });
       if (response.status < 500 || attempt === 2) return response;
       lastError = new Error(`upstream_${response.status}`);
