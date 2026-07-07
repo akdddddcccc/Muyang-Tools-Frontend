@@ -46,11 +46,18 @@ async function waitForJob<T extends TypographyGenerationJob | BackgroundGenerati
   onUpdate?: (job: T, attempt: number) => void,
 ) {
   let job = initialJob;
+  let transientFailures = 0;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     onUpdate?.(job, attempt);
     if (job.status === "completed" || job.status === "failed") return job;
     await sleep(attempt < 8 ? 1200 : 1800);
-    job = await fetchJob(job.id);
+    try {
+      job = await fetchJob(job.id);
+      transientFailures = 0;
+    } catch (error) {
+      transientFailures += 1;
+      if (transientFailures >= 6) throw error;
+    }
   }
   throw new Error("生成任务仍在处理中，请稍后刷新项目资产。");
 }
