@@ -1,6 +1,6 @@
 export interface CoreHealth {
   status: "ok";
-  service: "live-sticker-api";
+  service: "live-sticker-api" | "task-map-api";
   mode: "foundation" | "staging" | "production";
   version: string;
   timestamp: string;
@@ -103,4 +103,62 @@ export async function createBackgroundJob(input: { kind: BackgroundKind; prompt?
   const payload = await response.json().catch(() => ({})) as BackgroundGenerationJob & { message?: string };
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
+}
+
+export interface TaskMapNodeInput {
+  id: string;
+  parentId?: string;
+  title: string;
+  note?: string;
+}
+
+export interface TaskMapBreakdownInput {
+  task: TaskMapNodeInput;
+  ancestors?: TaskMapNodeInput[];
+  siblings?: TaskMapNodeInput[];
+  locale?: "zh" | "en";
+}
+
+export interface TaskMapBreakdownItem {
+  title: string;
+  note?: string;
+}
+
+export interface TaskMapScheduleInput {
+  parent: TaskMapNodeInput & { startDay: number; endDay: number };
+  children: Array<TaskMapNodeInput & { startDay?: number; endDay?: number; lane?: number }>;
+  locale?: "zh" | "en";
+}
+
+export interface TaskMapScheduleItem {
+  id: string;
+  startDay: number;
+  endDay: number;
+  lane: number;
+  dependsOn?: string[];
+  note?: string;
+}
+
+export async function createTaskBreakdown(input: TaskMapBreakdownInput): Promise<{ items: TaskMapBreakdownItem[]; provider: string }> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/task-map/breakdown`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => ({})) as { items?: TaskMapBreakdownItem[]; provider?: string; message?: string };
+  if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
+  return { items: payload.items ?? [], provider: payload.provider ?? "unknown" };
+}
+
+export async function createTaskSchedule(input: TaskMapScheduleInput): Promise<{ items: TaskMapScheduleItem[]; provider: string }> {
+  if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
+  const response = await fetch(`${coreBaseUrl}/v1/task-map/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = await response.json().catch(() => ({})) as { items?: TaskMapScheduleItem[]; provider?: string; message?: string };
+  if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
+  return { items: payload.items ?? [], provider: payload.provider ?? "unknown" };
 }
