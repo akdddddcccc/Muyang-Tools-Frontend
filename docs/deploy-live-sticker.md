@@ -3,6 +3,7 @@
 ## 公开地址
 
 - Web 工作台：`https://cmuyang23333.top/live-sticker/`
+- 任务甘特图：`https://cmuyang23333.top/task-map/`
 - 未来 Core API：`https://api.cmuyang23333.top`
 
 `cmuyang23333.top` 没有备案，正式前端部署到 Vercel，不使用 EdgeOne 中国大陆节点。本仓库仅发布静态前端；模型密钥、Provider Adapter 和服务端密钥绝不进入 Vercel 的 `VITE_` 环境变量。
@@ -28,15 +29,15 @@ dist/
     assets/
 ```
 
-因此 Vercel 会在 `/live-sticker/` 提供工作台，根地址会临时跳转到该入口。以后正式工具首页出现时，再将根地址改为工具导航页。
+因此 Vercel 会在 `/live-sticker/` 提供工作台，根地址会临时跳转到该入口。`/task-map/` 通过 Vercel rewrite 复用同一个前端入口，由 React 根据路径切到任务甘特图页面。以后正式工具首页出现时，再将根地址改为工具导航页。
 
 ## 环境变量
 
 | 变量 | 预览阶段 | Core 上线后 |
 | --- | --- | --- |
-| `VITE_CORE_API_BASE_URL` | 不设置 | `https://api.cmuyang23333.top` |
+| `VITE_CORE_API_BASE_URL` | 不设置 | `/api` |
 
-未设置时页面仅显示 Core 未连接，仍可用于前端交互和本地项目数据验收。`VITE_CORE_API_BASE_URL` 是浏览器可见地址，不得填入 OpenAI、OFOX、DeepSeek 或任何 Provider 的 Key。
+未设置时页面仅显示 Core 未连接，仍可用于前端交互和本地项目数据验收。当前 Vercel 使用 `/api` 同源代理转发到 `http://muyang-tool.noteach.com.cn/api/`，避免 HTTPS 页面直接请求 HTTP 后端造成浏览器 mixed content 拦截。`VITE_CORE_API_BASE_URL` 是浏览器可见地址，不得填入 OpenAI、OFOX、DeepSeek 或任何 Provider 的 Key。
 
 ## 上线顺序
 
@@ -44,11 +45,11 @@ dist/
 2. 验收图标、字体预设、上传素材、融合画板与刷新后的本地项目恢复。
 3. 在 Vercel 项目 Settings > Domains 添加 `cmuyang23333.top`，以 Vercel 后台显示的 CNAME 目标为准。
 4. 在域名 DNS 服务商处移除当前指向 GitHub Pages 的 `cmuyang23333.top` A 记录，再添加 Vercel 要求的 CNAME；不要同时保留 A 与 CNAME。
-5. 等 HTTPS 证书签发并验证 `https://cmuyang23333.top/live-sticker/` 后，再进入 Core 公网部署阶段。
+5. 等 HTTPS 证书签发并验证 `https://cmuyang23333.top/live-sticker/`、`https://cmuyang23333.top/task-map/` 和 `/api/health` 后，再进入 Core 公网部署阶段。
 
 ## Core 边界
 
-Core 不随本次静态前端部署。后续可部署到单位服务器或海外服务，并让 `api.cmuyang23333.top` 指向该服务；必须启用 HTTPS、限制 CORS 来源、提供 `GET /health`，然后才在 Vercel 写入 `VITE_CORE_API_BASE_URL` 并重新部署。
+Core 不随本次静态前端部署。当前临时生产方案是 Vercel `/api` rewrite 到单位 HTTP Core；如果后续有 HTTPS API 域名，可以让 `api.cmuyang23333.top` 指向该服务，再把 Vercel rewrite 或 `VITE_CORE_API_BASE_URL` 切过去。Core 必须限制 CORS 来源、提供 `GET /health`，且模型 Provider key 只保存在服务器环境变量中。
 
 ## 本地复核
 

@@ -7,6 +7,10 @@
     {
       "source": "/api/:path*",
       "destination": "http://muyang-tool.noteach.com.cn/api/:path*"
+    },
+    {
+      "source": "/task-map/:path*",
+      "destination": "/live-sticker/index.html"
     }
   ],
   "redirects": [
