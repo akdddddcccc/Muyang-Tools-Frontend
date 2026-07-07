@@ -38,11 +38,9 @@ async function fetchWithRetry(url, options) {
 }
 
 export default async function handler(req, res) {
-  const path = Array.isArray(req.query.path) ? req.query.path.join("/") : "";
-  const query = { ...req.query };
-  delete query.path;
-  const search = new URLSearchParams(query).toString();
-  const targetUrl = `${targetBaseUrl}/${path}${search ? `?${search}` : ""}`;
+  const requestUrl = new URL(req.url || "/api", "http://localhost");
+  const path = requestUrl.pathname.replace(/^\/api\/?/, "");
+  const targetUrl = `${targetBaseUrl}${path ? `/${path}` : ""}${requestUrl.search}`;
 
   try {
     const upstream = await fetchWithRetry(targetUrl, {
