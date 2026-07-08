@@ -5,14 +5,18 @@
 }
 
 .task-map-header {
-  min-height: 72px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 14px 24px;
+  padding: 12px 24px;
   border-bottom: 1px solid #26313a;
-  background: rgba(11, 16, 21, .96);
+  background: rgba(11, 16, 21, .94);
+  backdrop-filter: blur(18px);
 }
 
 .task-map-header p,
@@ -85,48 +89,104 @@
 }
 
 .task-map-main {
-  padding: 26px clamp(16px, 4vw, 48px) 48px;
+  padding: 18px clamp(16px, 3.2vw, 42px) 42px;
 }
 
 .task-map-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 360px);
-  gap: 24px;
-  align-items: end;
-  margin-bottom: 22px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #26313a;
+  grid-template-columns: 170px minmax(0, 1fr) minmax(220px, 340px);
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(110deg, rgba(123, 248, 156, .08), transparent 46%),
+    #10171d;
+  border: 1px solid #26313a;
+  border-radius: 8px;
 }
 
 .task-map-hero h2 {
-  max-width: 760px;
-  margin: 8px 0 0;
-  font-size: clamp(26px, 4vw, 48px);
-  line-height: 1.12;
+  max-width: 860px;
+  margin: 0;
+  font-size: clamp(22px, 2.6vw, 34px);
+  line-height: 1.08;
   letter-spacing: 0;
 }
 
 .task-map-hero span {
   justify-self: end;
-  max-width: 360px;
-  padding: 12px 14px;
+  width: 100%;
+  max-width: 340px;
+  padding: 10px 12px;
   color: #aabbb0;
-  background: #111a21;
+  background: rgba(11, 16, 21, .72);
   border: 1px solid #2d3a43;
-  border-radius: 7px;
+  border-radius: 6px;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.45;
 }
 
 .task-map-workbench {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(280px, 350px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.task-phase-switch {
+  display: inline-flex;
+  gap: 0;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border: 1px solid #26313a;
+  border-radius: 7px;
+  background: #111a21;
+}
+
+.task-phase-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 15px;
+  color: #9aafa4;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #26313a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-phase-switch button:last-child {
+  border-right: 0;
+}
+
+.task-phase-switch button:hover {
+  color: #edf4ef;
+}
+
+.task-phase-switch button.selected {
+  color: #07100a;
+  background: #7bf89c;
+}
+
+.task-phase-switch span {
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+}
+
+.task-map-structure-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 14px;
   align-items: start;
 }
 
 .task-map-tree-panel,
-.task-map-gantt-panel {
+.task-map-gantt-panel,
+.mind-map-panel {
   min-width: 0;
   border: 1px solid #26313a;
   border-radius: 8px;
@@ -137,6 +197,290 @@
   position: sticky;
   top: 16px;
   overflow: hidden;
+}
+
+.mind-editor-panel {
+  position: sticky;
+  top: 16px;
+}
+
+.mind-map-panel {
+  overflow: hidden;
+}
+
+.mind-map-canvas {
+  position: relative;
+  height: min(720px, calc(100vh - 226px));
+  min-height: 560px;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(123, 248, 156, .08), transparent 28%),
+    linear-gradient(135deg, rgba(255,255,255,.035) 0 1px, transparent 1px 18px),
+    #0d141a;
+}
+
+.mind-map-canvas .react-flow__pane {
+  cursor: grab;
+}
+
+.mind-map-canvas .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.mind-map-canvas .react-flow__controls {
+  overflow: hidden;
+  border: 1px solid #26313a;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.mind-map-canvas .react-flow__controls-button {
+  width: 30px;
+  height: 30px;
+  color: #cfe2d6;
+  background: #111a21;
+  border-bottom-color: #26313a;
+}
+
+.mind-map-canvas .react-flow__controls-button:hover {
+  color: #7bf89c;
+  background: #14261b;
+}
+
+.mind-map-canvas .react-flow__attribution {
+  display: none;
+}
+
+.mind-context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 132px;
+  padding: 6px;
+  background: rgba(11, 16, 21, .96);
+  border: 1px solid rgba(218, 255, 87, .46);
+  border-radius: 7px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, .32), 0 0 28px rgba(218, 255, 87, .12);
+}
+
+.mind-context-menu button {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  color: #e7ff85;
+  text-align: left;
+  background: rgba(218, 255, 87, .08);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.mind-context-menu button:hover {
+  color: #07100a;
+  background: #dfff57;
+}
+
+.mind-node {
+  position: relative;
+  width: 232px;
+  min-height: 88px;
+  overflow: visible;
+  color: #edf4ef;
+  background: #111a21;
+  border: 1px solid #2d3a43;
+  border-radius: 8px;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, .18);
+  backface-visibility: hidden;
+  contain: layout paint;
+  transform: translateZ(0);
+  user-select: none;
+  will-change: transform;
+}
+
+.mind-node.selected {
+  border-color: #7bf89c;
+  box-shadow: 0 0 0 1px rgba(123, 248, 156, .28), 0 20px 42px rgba(0, 0, 0, .28);
+}
+
+.mind-node.root {
+  background: #14261b;
+  border-color: rgba(123, 248, 156, .72);
+}
+
+.mind-node.depth-1 {
+  border-color: rgba(140, 201, 255, .52);
+}
+
+.mind-node.depth-2 {
+  border-color: rgba(241, 211, 107, .52);
+}
+
+.mind-node.depth-3 {
+  border-color: rgba(241, 154, 121, .52);
+}
+
+.mind-node-main {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 88px;
+  padding: 12px 72px 12px 14px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  outline: 0;
+}
+
+.mind-node-main:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .46);
+}
+
+.mind-node-main span {
+  color: #7bf89c;
+  font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .09em;
+}
+
+.mind-node-main strong {
+  overflow: hidden;
+  color: #edf4ef;
+  font-size: 13px;
+  line-height: 1.24;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mind-node-main small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #89a195;
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mind-node-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mind-node-actions button {
+  width: 34px;
+  height: 22px;
+  color: #cfe2d6;
+  background: #0b1015;
+  border: 1px solid #2d3a43;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.mind-node-actions button:hover {
+  color: #07100a;
+  background: #7bf89c;
+  border-color: #7bf89c;
+}
+
+.mind-node-actions button:disabled {
+  cursor: not-allowed;
+  opacity: .38;
+}
+
+.mind-node-actions button:disabled:hover {
+  color: #cfe2d6;
+  background: #0b1015;
+  border-color: #2d3a43;
+}
+
+.mind-handle {
+  width: 10px;
+  height: 10px;
+  background: #7bf89c;
+  border: 2px solid #0d141a;
+}
+
+.mind-handle.target {
+  left: -5px;
+}
+
+.mind-handle.source {
+  right: -5px;
+}
+
+.mind-bezier-hit,
+.mind-bezier-glow,
+.mind-bezier-line {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.mind-bezier-hit {
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: visibleStroke;
+}
+
+.mind-bezier-glow {
+  stroke: rgba(218, 255, 87, .2);
+  stroke-width: 9;
+  pointer-events: none;
+}
+
+.mind-bezier-line {
+  stroke: rgba(215, 255, 88, .86);
+  stroke-width: 2.1;
+  pointer-events: none;
+}
+
+.mind-bezier-edge.depth-1 .mind-bezier-line {
+  stroke: rgba(201, 255, 83, .86);
+}
+
+.mind-bezier-edge.depth-1 .mind-bezier-glow {
+  stroke: rgba(201, 255, 83, .2);
+}
+
+.mind-bezier-edge.depth-2 .mind-bezier-line {
+  stroke: rgba(233, 255, 103, .84);
+}
+
+.mind-bezier-edge.depth-2 .mind-bezier-glow {
+  stroke: rgba(233, 255, 103, .2);
+}
+
+.mind-bezier-edge.depth-3 .mind-bezier-line {
+  stroke: rgba(174, 255, 105, .8);
+}
+
+.mind-bezier-edge.depth-3 .mind-bezier-glow {
+  stroke: rgba(174, 255, 105, .18);
+}
+
+.mind-bezier-edge.active .mind-bezier-line {
+  stroke: #e7ff58;
+  stroke-width: 2.75;
+}
+
+.mind-bezier-edge.active .mind-bezier-glow {
+  stroke: rgba(231, 255, 88, .42);
+  stroke-width: 11;
+}
+
+.mind-bezier-knot {
+  fill: #e7ff58;
+  stroke: #0d141a;
+  stroke-width: 2;
+  opacity: .86;
+}
+
+.mind-bezier-knot.target {
+  opacity: .58;
 }
 
 .task-panel-title {
@@ -453,16 +797,23 @@
 
 @media (max-width: 980px) {
   .task-map-hero,
-  .task-map-workbench {
+  .task-map-workbench,
+  .task-map-structure-workbench {
     grid-template-columns: 1fr;
   }
 
-  .task-map-tree-panel {
+  .task-map-hero {
+    gap: 10px;
+  }
+
+  .task-map-tree-panel,
+  .mind-editor-panel {
     position: static;
   }
 
   .task-map-hero span {
     justify-self: stretch;
+    max-width: none;
   }
 
   .task-overview {
@@ -486,10 +837,23 @@
   }
 
   .task-map-hero h2 {
-    font-size: 28px;
+    font-size: 24px;
   }
 
   .task-gantt-scroll {
     min-height: 420px;
+  }
+
+  .mind-map-canvas {
+    min-height: 460px;
+  }
+
+  .task-phase-switch {
+    display: flex;
+  }
+
+  .task-phase-switch button {
+    flex: 1;
+    justify-content: center;
   }
 }
