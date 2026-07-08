@@ -1433,9 +1433,28 @@ function latestAsset(assets: ProjectAsset[], kind: ProjectAssetKind) {
 }
 
 async function resultFile(result: { url: string; fileName?: string; mimeType?: string }, fallbackName: string) {
-  const response = await fetch(result.url);
-  const blob = await response.blob();
+  const blob = result.url.startsWith("data:")
+    ? dataUrlToBlob(result.url, result.mimeType)
+    : await fetchResultBlob(result.url);
   return new File([blob], result.fileName || fallbackName, { type: result.mimeType || blob.type || "image/png" });
+}
+
+async function fetchResultBlob(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Core image returned ${response.status}.`);
+  return response.blob();
+}
+
+function dataUrlToBlob(dataUrl: string, fallbackMimeType = "image/png") {
+  const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/s);
+  if (!match) throw new Error("Core returned an invalid image data URL.");
+  const mimeType = match[1] || fallbackMimeType;
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
 }
 
 async function assetReference(asset: ProjectAsset): Promise<ImageReferenceInput> {
