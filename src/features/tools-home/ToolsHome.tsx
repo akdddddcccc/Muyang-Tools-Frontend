@@ -47,9 +47,9 @@ export function ToolsHome({
     <main className="tools-home-shell">
       <header className="tools-home-topbar">
         <div className="tools-home-lockup" aria-label="MUYANG x NOBOOK">
-          <i className="tools-home-product-mark" aria-hidden="true" />
+          <img src={`${import.meta.env.BASE_URL}assets/portfolio-icon.svg`} alt="muyang23333.top" />
           <span>×</span>
-          <i className="tools-home-lab-mark" aria-hidden="true" />
+          <img src={`${import.meta.env.BASE_URL}assets/fav.svg`} alt="cmuyang23333.top" />
         </div>
         <div className="tools-home-language" aria-label="Language">
           <button className={language === "zh" ? "selected" : ""} type="button" onClick={() => onLanguageChange("zh")}>中</button>
