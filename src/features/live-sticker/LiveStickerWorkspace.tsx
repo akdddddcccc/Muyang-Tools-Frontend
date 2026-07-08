@@ -85,10 +85,12 @@ function useMediaQuery(query: string) {
 export function LiveStickerWorkspace({
   language,
   onLanguageChange,
+  onOpenHome,
   onOpenTaskMap,
 }: {
   language: "zh" | "en";
   onLanguageChange: (language: "zh" | "en") => void;
+  onOpenHome?: () => void;
   onOpenTaskMap?: () => void;
 }) {
   const [activeTool, setActiveTool] = useState<ToolId>("background");
@@ -146,6 +148,11 @@ export function LiveStickerWorkspace({
           </div>
         </div>
         <div className="header-controls">
+          {onOpenHome ? (
+            <button className="health-refresh" type="button" onClick={onOpenHome}>
+              {isEnglish ? "Toolkit" : "工具主页"}
+            </button>
+          ) : null}
           <div className={`service-state ${healthState}`} title={getCoreBaseUrl() || "未配置 Core 地址"}>
             <span>{healthState === "online" ? "●" : "○"}</span>
             {healthMessage}

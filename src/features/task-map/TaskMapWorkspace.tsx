@@ -92,7 +92,7 @@ function taskInput(task: TaskNode) {
   return { id: task.id, parentId: task.parentId, title: task.title, note: task.note };
 }
 
-export function TaskMapWorkspace({ language, onLanguageChange, onOpenLiveSticker }: { language: Language; onLanguageChange: (language: Language) => void; onOpenLiveSticker: () => void }) {
+export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpenLiveSticker }: { language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void; onOpenLiveSticker: () => void }) {
   const isEnglish = language === "en";
   const [tasks, setTasks] = useState<TaskNode[]>(loadInitialTasks);
   const [selectedId, setSelectedId] = useState("goal");
@@ -321,6 +321,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenLiveSticker
           <h1>{isEnglish ? "AI Task Gantt Studio" : "AI 任务甘特图工作台"}</h1>
         </div>
         <div className="task-map-header-actions">
+          <button type="button" onClick={onOpenHome}>{isEnglish ? "Toolkit" : "工具主页"}</button>
           <button type="button" onClick={onOpenLiveSticker}>{isEnglish ? "Live Sticker" : "直播贴片"}</button>
           <div className="task-language-switcher" role="group" aria-label="language">
             <button className={language === "zh" ? "selected" : ""} type="button" onClick={() => onLanguageChange("zh")}>中</button>

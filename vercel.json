@@ -15,11 +15,6 @@
   ],
   "redirects": [
     {
-      "source": "/",
-      "destination": "/live-sticker/",
-      "permanent": false
-    },
-    {
       "source": "/live-sticker",
       "destination": "/live-sticker/",
       "permanent": true
