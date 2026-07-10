@@ -542,6 +542,15 @@
   border-bottom: 1px solid #26313a;
 }
 
+.task-panel-title-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
 .task-shortcut-hint {
   flex: 1;
   overflow: hidden;
@@ -551,6 +560,48 @@
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.task-fullscreen-button.selected {
+  color: #07100a;
+  background: #7bf89c;
+  border-color: #7bf89c;
+  box-shadow: 0 0 22px rgba(123, 248, 156, .22);
+}
+
+.task-fullscreen-target:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #edf4ef;
+  background: #10171d;
+  border: 0;
+  border-radius: 0;
+}
+
+.task-fullscreen-target:fullscreen .task-panel-title {
+  flex: 0 0 auto;
+  background: rgba(11, 16, 21, .96);
+  backdrop-filter: blur(18px);
+}
+
+.mind-map-panel:fullscreen .mind-map-canvas {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.task-map-gantt-panel:fullscreen .task-overview {
+  flex: 0 0 auto;
+}
+
+.task-map-gantt-panel:fullscreen .task-gantt-scroll {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
 }
 
 .mind-init-button {

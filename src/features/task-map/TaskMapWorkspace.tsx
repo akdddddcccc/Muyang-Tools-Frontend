@@ -31,6 +31,7 @@ type DragState = {
 };
 
 type TaskPhase = "structure" | "timeline";
+type FullscreenPanel = TaskPhase | null;
 
 type MindNodeData = {
   task: TaskNode;
@@ -447,7 +448,10 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const [timelinePopover, setTimelinePopover] = useState<TimelinePopoverState>(null);
   const [rootStartInput, setRootStartInput] = useState("");
   const [rootEndInput, setRootEndInput] = useState("");
+  const [fullscreenPanel, setFullscreenPanel] = useState<FullscreenPanel>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
+  const mindPanelRef = useRef<HTMLElement | null>(null);
+  const ganttPanelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const dragHoldTimerRef = useRef<number | null>(null);
   const latestTasksRef = useRef<TaskNode[]>(tasks);
@@ -534,6 +538,35 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     observer.observe(node);
     return () => observer.disconnect();
   }, [phase]);
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const element = document.fullscreenElement;
+      if (element === mindPanelRef.current) setFullscreenPanel("structure");
+      else if (element === ganttPanelRef.current) setFullscreenPanel("timeline");
+      else setFullscreenPanel(null);
+    };
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, []);
+
+  const toggleFullscreen = async (panel: TaskPhase) => {
+    const target = panel === "structure" ? mindPanelRef.current : ganttPanelRef.current;
+    if (!target?.requestFullscreen) {
+      setMessage(isEnglish ? "This browser does not support fullscreen mode." : "当前浏览器不支持全屏模式。");
+      return;
+    }
+    try {
+      if (document.fullscreenElement === target) {
+        await document.exitFullscreen();
+      } else {
+        if (document.fullscreenElement) await document.exitFullscreen();
+        await target.requestFullscreen();
+      }
+    } catch {
+      setMessage(isEnglish ? "Fullscreen mode was blocked by the browser." : "浏览器拦截了全屏操作。");
+    }
+  };
 
   useEffect(() => {
     const nextLength = clamp(Math.round(viewLength), minVisibleDays, maxVisibleDays);
@@ -1457,10 +1490,15 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
 
         {phase === "structure" ? (
           <section className="task-map-structure-workbench">
-            <section className="mind-map-panel">
+            <section className="mind-map-panel task-fullscreen-target" ref={mindPanelRef}>
               <div className="task-panel-title">
                 <span>{isEnglish ? "Mind Map / Logic" : "思维导图 / 逻辑关系"}</span>
-                <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
+                <div className="task-panel-title-actions">
+                  <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
+                  <button className={`task-fullscreen-button${fullscreenPanel === "structure" ? " selected" : ""}`} type="button" onClick={() => void toggleFullscreen("structure")}>
+                    {fullscreenPanel === "structure" ? (isEnglish ? "Exit" : "退出") : (isEnglish ? "Fullscreen" : "全屏")}
+                  </button>
+                </div>
               </div>
               <div className="mind-map-canvas" tabIndex={0} onKeyDown={handleMindMapKeyDown}>
                 <ReactFlow
@@ -1530,10 +1568,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
           </section>
         ) : (
           <section className="task-map-timeline-workbench">
-            <section className="task-map-gantt-panel task-map-gantt-panel--wide">
+            <section className="task-map-gantt-panel task-map-gantt-panel--wide task-fullscreen-target" ref={ganttPanelRef}>
               <div className="task-panel-title">
                 <span>{isEnglish ? "Timeline / Gantt" : "时间轴 / 甘特图"}</span>
                 <div className="task-map-range">
+                  <button className={`task-fullscreen-button${fullscreenPanel === "timeline" ? " selected" : ""}`} type="button" onClick={() => void toggleFullscreen("timeline")}>
+                    {fullscreenPanel === "timeline" ? (isEnglish ? "Exit" : "退出") : (isEnglish ? "Fullscreen" : "全屏")}
+                  </button>
                   <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Todo PDF" : "清单 PDF"}</button>
                   <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Interactive HTML" : "交互 HTML"}</button>
                   <button type="button" onClick={() => { setViewStart(totalStart); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
