@@ -968,7 +968,7 @@
   --task-bar-shadow: rgba(103, 217, 255, .34);
   color: #06110d;
   background:
-    linear-gradient(90deg, #e7ff58 0%, #7bf89c 31%, #67d9ff 62%, #ff5b5b 100%);
+    linear-gradient(90deg, #f7f51a 0%, #96e83d 22%, #35cf68 38%, #3d86db 62%, #4f4ff1 78%, #aa35db 100%);
   background-size: 100% 100%;
   border-color: rgba(231, 255, 88, .76);
   box-shadow: 0 14px 30px rgba(0, 0, 0, .24), 0 0 28px rgba(123, 248, 156, .18), 0 0 34px rgba(103, 217, 255, .16);
