@@ -105,7 +105,7 @@ function todayStart() {
 
 function dateFromDay(day: number) {
   const date = todayStart();
-  date.setDate(date.getDate() + Math.max(0, Math.round(day)));
+  date.setDate(date.getDate() + Math.round(day));
   return date;
 }
 
@@ -464,12 +464,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     [ganttLaneHostByTaskId, visibleTasks],
   );
 
+  const totalStart = Math.min(...tasks.map((task) => task.startDay), 0);
   const totalEnd = Math.max(...tasks.map((task) => task.endDay), 120);
-  const totalDays = totalEnd + 1;
+  const totalDays = totalEnd - totalStart + 1;
   const maxVisibleDays = Math.max(24, totalDays);
   const trackViewportWidth = Math.max(360, chartWidth);
   const timelineDayWidth = clamp(trackViewportWidth / Math.max(1, viewLength), minDayWidth, maxDayWidth);
-  const timelineDays = Array.from({ length: totalDays }, (_, index) => index);
+  const timelineDays = Array.from({ length: totalDays }, (_, index) => totalStart + index);
   const taskBarColor = (task: TaskNode & { depth: number }) => {
     const depth = Math.max(0, task.depth);
     const rootChildren = directChildren(root.id, tasks);
@@ -510,9 +511,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, [phase]);
 
   useEffect(() => {
-    if (viewStart !== 0) setViewStart(0);
+    if (viewStart !== totalStart) setViewStart(totalStart);
     if (viewLength > maxVisibleDays) setViewLength(maxVisibleDays);
-  }, [maxVisibleDays, totalDays, viewLength, viewStart]);
+  }, [maxVisibleDays, totalDays, totalStart, viewLength, viewStart]);
 
   const persist = (nextTasks: TaskNode[]) => {
     const normalizedTasks = includeAncestorRanges(nextTasks);
@@ -1109,14 +1110,14 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     const exportDayWidth = 18;
     const rowHeight = 46;
     const rows = collectVisibleTaskRows(root, childrenByParent);
-    const dateLabels = Array.from({ length: totalDays }, (_, day) => day)
+    const dateLabels = Array.from({ length: totalDays }, (_, index) => totalStart + index)
       .filter((day) => day % 7 === 0)
-      .map((day) => `<span style="left:${labelWidth + day * exportDayWidth}px">${formatDay(day)}</span>`)
+      .map((day) => `<span style="left:${labelWidth + (day - totalStart) * exportDayWidth}px">${formatDay(day)}</span>`)
       .join("");
     const rowHtml = rows.map((task, index) => {
       const color = taskBarColor(task);
       const hasChildren = Boolean((childrenByParent.get(task.id) ?? []).length);
-      const barLeft = labelWidth + task.startDay * exportDayWidth;
+      const barLeft = labelWidth + (task.startDay - totalStart) * exportDayWidth;
       const barWidth = Math.max(18, (task.endDay - task.startDay + 1) * exportDayWidth);
       return `
         <div class="gantt-row depth-${Math.min(task.depth, 4)}" data-id="${task.id}" data-parent="${task.parentId ?? ""}" data-depth="${task.depth}" style="top:${72 + index * rowHeight}px">
@@ -1569,7 +1570,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                     removeTask(id);
                   }}
                   onFocusRange={(task) => {
-                    setViewStart(Math.max(0, task.startDay - 4));
+                    setViewStart(Math.max(totalStart, task.startDay - 4));
                     setViewLength(Math.max(28, task.endDay - task.startDay + 10));
                   }}
                   onToggleChildren={() => updateTask(timelinePopoverTask.id, { collapsed: !timelinePopoverTask.collapsed })}
@@ -1600,7 +1601,7 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
   onToggleChildren: () => void;
   onClose: () => void;
 }) {
-  const minStart = 0;
+  const minStart = -36500;
   const maxEnd = Math.max(parent?.endDay ?? 0, task.endDay + 30, 120);
   const [startInput, setStartInput] = useState(formatDay(task.startDay));
   const [endInput, setEndInput] = useState(formatDay(task.endDay));
