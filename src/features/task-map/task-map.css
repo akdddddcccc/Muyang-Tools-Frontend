@@ -602,6 +602,10 @@
   box-shadow: 0 0 24px rgba(231, 255, 88, .2), 0 0 34px rgba(123, 248, 156, .14);
 }
 
+.task-panel-title .mind-init-button:hover {
+  color: #07100a;
+}
+
 .mind-init-button:hover::after {
   background: linear-gradient(135deg, #7bf89c, #e7ff58);
 }
