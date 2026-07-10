@@ -536,9 +536,12 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, [phase]);
 
   useEffect(() => {
-    if (viewStart !== totalStart) setViewStart(totalStart);
-    if (viewLength > maxVisibleDays) setViewLength(maxVisibleDays);
-  }, [maxVisibleDays, totalDays, totalStart, viewLength, viewStart]);
+    const nextLength = Math.min(viewLength, maxVisibleDays);
+    const maxStart = Math.max(totalStart, totalEnd - nextLength + 1);
+    if (viewLength !== nextLength) setViewLength(nextLength);
+    if (viewStart < totalStart) setViewStart(totalStart);
+    else if (viewStart > maxStart) setViewStart(maxStart);
+  }, [maxVisibleDays, totalEnd, totalStart, viewLength, viewStart]);
 
   useEffect(() => {
     setRootStartInput(formatDay(root.startDay));
@@ -1671,8 +1674,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                     removeTask(id);
                   }}
                   onFocusRange={(task) => {
-                    setViewStart(Math.max(totalStart, task.startDay - 4));
-                    setViewLength(Math.max(28, task.endDay - task.startDay + 10));
+                    const taskDuration = Math.max(1, task.endDay - task.startDay + 1);
+                    const minimumWindow = Math.min(90, maxVisibleDays);
+                    const preferredWindow = clamp(Math.max(minimumWindow, taskDuration * 4), minimumWindow, maxVisibleDays);
+                    const focusPadding = Math.max(8, Math.round((preferredWindow - taskDuration) / 2));
+                    const maxStart = Math.max(totalStart, totalEnd - preferredWindow + 1);
+                    setViewStart(clamp(task.startDay - focusPadding, totalStart, maxStart));
+                    setViewLength(preferredWindow);
                   }}
                   onToggleChildren={() => updateTask(timelinePopoverTask.id, { collapsed: !timelinePopoverTask.collapsed })}
                   onClose={() => setTimelinePopover(null)}
