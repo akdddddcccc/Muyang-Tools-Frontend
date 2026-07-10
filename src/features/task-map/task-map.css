@@ -542,14 +542,6 @@
   border-bottom: 1px solid #26313a;
 }
 
-.mind-panel-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  min-width: 0;
-}
-
 .task-shortcut-hint {
   flex: 1;
   overflow: hidden;
@@ -578,6 +570,13 @@
   box-shadow: 0 0 16px rgba(123, 248, 156, .12);
 }
 
+.mind-map-canvas > .mind-init-button {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 12;
+}
+
 .mind-init-button::before {
   content: "";
   position: absolute;
@@ -603,6 +602,10 @@
 }
 
 .task-panel-title .mind-init-button:hover {
+  color: #07100a;
+}
+
+.mind-map-canvas > .mind-init-button:hover {
   color: #07100a;
 }
 

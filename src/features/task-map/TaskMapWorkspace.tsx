@@ -1324,12 +1324,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
             <section className="mind-map-panel">
               <div className="task-panel-title">
                 <span>{isEnglish ? "Mind Map / Logic" : "思维导图 / 逻辑关系"}</span>
-                <div className="mind-panel-actions">
-                  <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
-                  <button className="mind-init-button" type="button" onClick={initializeRootTask}>
-                    {isEnglish ? "Initialize" : "初始化"}
-                  </button>
-                </div>
+                <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
               </div>
               <div className="mind-map-canvas" tabIndex={0} onKeyDown={handleMindMapKeyDown}>
                 <ReactFlow
@@ -1360,6 +1355,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                   <Background color="rgba(123,248,156,.18)" gap={22} />
                   <Controls showInteractive={false} />
                 </ReactFlow>
+                <button className="mind-init-button" type="button" onClick={initializeRootTask}>
+                  {isEnglish ? "Initialize" : "初始化"}
+                </button>
                 {mindContextMenu ? (
                   <div className="mind-context-menu" style={{ left: mindContextMenu.x, top: mindContextMenu.y }}>
                     <button type="button" onClick={formatMindLayout}>{isEnglish ? "Format layout" : "一键格式化"}</button>
