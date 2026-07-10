@@ -663,6 +663,19 @@
   backdrop-filter: blur(18px);
 }
 
+.task-fullscreen-target:fullscreen .task-fullscreen-button,
+.task-fullscreen-target:fullscreen .task-fullscreen-button:hover,
+.task-fullscreen-target:fullscreen .task-fullscreen-button:focus-visible {
+  color: #07100a !important;
+  background: #7bf89c;
+  border-color: #7bf89c;
+  box-shadow: 0 0 22px rgba(123, 248, 156, .22);
+}
+
+.task-fullscreen-target:fullscreen .task-fullscreen-button span {
+  color: inherit !important;
+}
+
 .mind-map-panel:fullscreen .mind-map-canvas {
   flex: 1;
   height: auto;

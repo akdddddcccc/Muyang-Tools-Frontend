@@ -46,10 +46,8 @@ export function ToolsHome({
   return (
     <main className="tools-home-shell">
       <header className="tools-home-topbar">
-        <div className="tools-home-lockup" aria-label="MUYANG x NOBOOK">
+        <div className="tools-home-lockup" aria-label="MUYANG">
           <img src={`${import.meta.env.BASE_URL}assets/portfolio-icon.svg`} alt="muyang23333.top" />
-          <span>×</span>
-          <img src={`${import.meta.env.BASE_URL}assets/fav.svg`} alt="cmuyang23333.top" />
         </div>
         <div className="tools-home-language" aria-label="Language">
           <button className={language === "zh" ? "selected" : ""} type="button" onClick={() => onLanguageChange("zh")}>中</button>
