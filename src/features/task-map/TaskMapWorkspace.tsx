@@ -97,13 +97,74 @@ function createId(prefix = "task") {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
 }
 
-function formatDay(day: number) {
+function todayStart() {
   const date = new Date();
-  date.setHours(12, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function dateFromDay(day: number) {
+  const date = todayStart();
   date.setDate(date.getDate() + Math.max(0, Math.round(day)));
+  return date;
+}
+
+function formatDay(day: number) {
+  const date = dateFromDay(day);
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const dayOfMonth = String(date.getDate()).padStart(2, "0");
   return `${month}.${dayOfMonth}`;
+}
+
+function normalizeDateInput(value: string) {
+  return value
+    .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/[．。]/g, ".")
+    .replace(/[／]/g, "/")
+    .replace(/[，、]/g, ",")
+    .replace(/[年月]/g, ".")
+    .replace(/[日号]/g, "");
+}
+
+function parseTimelineDateInput(value: string) {
+  const parts = normalizeDateInput(value).trim().match(/\d+/g);
+  if (!parts?.length) return null;
+  const currentYear = todayStart().getFullYear();
+  let year = currentYear;
+  let month: number;
+  let dayOfMonth: number;
+
+  if (parts.length >= 3) {
+    const first = parts[0];
+    if (first.length === 4 || Number(first) > 31) {
+      year = Number(first);
+      month = Number(parts[1]);
+      dayOfMonth = Number(parts[2]);
+    } else if (first.length === 2 && Number(first) > 12) {
+      year = 2000 + Number(first);
+      month = Number(parts[1]);
+      dayOfMonth = Number(parts[2]);
+    } else {
+      month = Number(parts[0]);
+      dayOfMonth = Number(parts[1]);
+    }
+  } else if (parts.length === 2) {
+    month = Number(parts[0]);
+    dayOfMonth = Number(parts[1]);
+  } else {
+    const compact = parts[0];
+    if (compact.length === 3 || compact.length === 4) {
+      month = Number(compact.slice(0, compact.length - 2));
+      dayOfMonth = Number(compact.slice(-2));
+    } else {
+      return null;
+    }
+  }
+
+  const date = new Date(year, month - 1, dayOfMonth);
+  date.setHours(0, 0, 0, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== dayOfMonth) return null;
+  return Math.round((date.getTime() - todayStart().getTime()) / 86_400_000);
 }
 
 function fallbackBreakdown(task: TaskNode): TaskMapBreakdownItem[] {
@@ -1539,11 +1600,56 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
 }) {
   const minStart = 0;
   const maxEnd = Math.max(parent?.endDay ?? 0, task.endDay + 30, 120);
+  const [startInput, setStartInput] = useState(formatDay(task.startDay));
+  const [endInput, setEndInput] = useState(formatDay(task.endDay));
+
+  useEffect(() => {
+    setStartInput(formatDay(task.startDay));
+  }, [task.id, task.startDay]);
+
+  useEffect(() => {
+    setEndInput(formatDay(task.endDay));
+  }, [task.id, task.endDay]);
+
   const changeStart = (value: number) => {
-    onUpdate(task.id, { startDay: clamp(Math.round(value), minStart, task.endDay - minDuration) });
+    const nextStart = clamp(Math.round(value), minStart, task.endDay - minDuration);
+    onUpdate(task.id, { startDay: nextStart });
+    return nextStart;
   };
   const changeEnd = (value: number) => {
-    onUpdate(task.id, { endDay: clamp(Math.round(value), task.startDay + minDuration, maxEnd) });
+    const nextEnd = clamp(Math.round(value), task.startDay + minDuration, maxEnd);
+    onUpdate(task.id, { endDay: nextEnd });
+    return nextEnd;
+  };
+  const commitDateInput = (kind: "start" | "end") => {
+    const rawValue = kind === "start" ? startInput : endInput;
+    const parsedDay = parseTimelineDateInput(rawValue);
+    if (parsedDay === null) {
+      if (kind === "start") setStartInput(formatDay(task.startDay));
+      else setEndInput(formatDay(task.endDay));
+      return;
+    }
+    if (kind === "start") {
+      const nextStart = changeStart(parsedDay);
+      setStartInput(formatDay(nextStart));
+    } else {
+      const nextEnd = changeEnd(parsedDay);
+      setEndInput(formatDay(nextEnd));
+    }
+  };
+  const handleDateInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, kind: "start" | "end") => {
+    event.stopPropagation();
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitDateInput(kind);
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (kind === "start") setStartInput(formatDay(task.startDay));
+      else setEndInput(formatDay(task.endDay));
+      event.currentTarget.blur();
+    }
   };
 
   return (
@@ -1557,11 +1663,31 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
       <div className="timeline-task-fields">
         <label>
           {isEnglish ? "Start" : "开始"}
-          <input type="number" min={minStart} max={task.endDay - minDuration} value={task.startDay} onChange={(event) => changeStart(Number(event.target.value))} />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={startInput}
+            placeholder={formatDay(task.startDay)}
+            title={isEnglish ? "Try 2025.12.1, 7.1 or 07/01" : "可输入 2025.12.1、7.1 或 07/01"}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setStartInput(event.target.value)}
+            onBlur={() => commitDateInput("start")}
+            onKeyDown={(event) => handleDateInputKeyDown(event, "start")}
+          />
         </label>
         <label>
           {isEnglish ? "End" : "结束"}
-          <input type="number" min={task.startDay + minDuration} max={maxEnd} value={task.endDay} onChange={(event) => changeEnd(Number(event.target.value))} />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={endInput}
+            placeholder={formatDay(task.endDay)}
+            title={isEnglish ? "Try 2025.12.1, 7.1 or 07/01" : "可输入 2025.12.1、7.1 或 07/01"}
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setEndInput(event.target.value)}
+            onBlur={() => commitDateInput("end")}
+            onKeyDown={(event) => handleDateInputKeyDown(event, "end")}
+          />
         </label>
         <label>
           {isEnglish ? "Lane" : "轨道"}
