@@ -928,7 +928,7 @@
   position: relative;
   min-height: 48px;
   background-image: linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px);
-  background-size: 34px 100%;
+  background-size: var(--timeline-day-width, 34px) 100%;
 }
 
 .task-bar {

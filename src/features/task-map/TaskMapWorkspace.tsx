@@ -63,8 +63,7 @@ type TimelinePopoverState = {
 } | null;
 
 const storageKey = "muyang-task-map-project-v1";
-const maxDayWidth = 34;
-const minDayWidth = 4;
+const minVisibleDays = 2;
 const minDuration = 2;
 const ganttRowHeight = 48;
 const dragActivateDistance = 6;
@@ -135,7 +134,9 @@ function shouldShowTimelineTick(day: number, index: number, visibleDays: number)
   if (visibleDays >= 900) return date.getMonth() === 0 && date.getDate() === 1;
   if (visibleDays >= 120) return date.getDate() === 1;
   if (visibleDays >= 60) return index % 14 === 0;
-  return index % 7 === 0;
+  if (visibleDays >= 35) return index % 7 === 0;
+  if (visibleDays >= 15) return index % 3 === 0;
+  return true;
 }
 
 function normalizeDateInput(value: string) {
@@ -489,13 +490,12 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const totalStart = Math.min(...tasks.map((task) => task.startDay), 0);
   const totalEnd = Math.max(...tasks.map((task) => task.endDay), 120);
   const totalDays = totalEnd - totalStart + 1;
-  const maxVisibleDays = Math.max(24, totalDays);
+  const maxVisibleDays = Math.max(minVisibleDays, totalDays);
   const trackViewportWidth = Math.max(360, chartWidth);
-  const isFullTimelineView = viewLength >= totalDays;
-  const timelineDayWidth = isFullTimelineView
-    ? trackViewportWidth / Math.max(1, totalDays)
-    : clamp(trackViewportWidth / Math.max(1, viewLength), minDayWidth, maxDayWidth);
-  const timelineDays = Array.from({ length: totalDays }, (_, index) => totalStart + index);
+  const visibleDayCount = clamp(Math.round(viewLength), minVisibleDays, maxVisibleDays);
+  const viewEnd = viewStart + visibleDayCount - 1;
+  const timelineDayWidth = trackViewportWidth / Math.max(1, visibleDayCount);
+  const timelineDays = Array.from({ length: visibleDayCount }, (_, index) => viewStart + index);
   const taskBarColor = (task: TaskNode & { depth: number }) => {
     const depth = Math.max(0, task.depth);
     const rootChildren = directChildren(root.id, tasks);
@@ -536,7 +536,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, [phase]);
 
   useEffect(() => {
-    const nextLength = Math.min(viewLength, maxVisibleDays);
+    const nextLength = clamp(Math.round(viewLength), minVisibleDays, maxVisibleDays);
     const maxStart = Math.max(totalStart, totalEnd - nextLength + 1);
     if (viewLength !== nextLength) setViewLength(nextLength);
     if (viewStart < totalStart) setViewStart(totalStart);
@@ -1547,8 +1547,8 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                     <em>{isEnglish ? `${viewLength} days` : `${viewLength} 天`}</em>
                   </span>
                   <div className="task-overview-control with-number">
-                    <input type="range" min={24} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(Number(event.target.value))} />
-                    <input type="number" min={24} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(clamp(Number(event.target.value), 24, maxVisibleDays))} aria-label={isEnglish ? "Visible days" : "显示天数"} />
+                    <input type="range" min={minVisibleDays} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(Number(event.target.value))} />
+                    <input type="number" min={minVisibleDays} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(clamp(Number(event.target.value), minVisibleDays, maxVisibleDays))} aria-label={isEnglish ? "Visible days" : "显示天数"} />
                   </div>
                 </label>
                 <label className="task-root-date-field">
@@ -1586,7 +1586,14 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
               </div>
 
               <div className="task-gantt-scroll" ref={chartRef} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                <div className="task-gantt-grid" style={{ width: timelineDays.length * timelineDayWidth, minWidth: timelineDays.length * timelineDayWidth }}>
+                <div
+                  className="task-gantt-grid"
+                  style={{
+                    width: trackViewportWidth,
+                    minWidth: trackViewportWidth,
+                    "--timeline-day-width": `${timelineDayWidth}px`,
+                  } as CSSProperties}
+                >
                   <div className="task-gantt-dates">
                     <div className="task-gantt-date-track" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, ${timelineDayWidth}px)` }}>
                       {timelineDays.map((day, index) => <b key={day}>{shouldShowTimelineTick(day, index, viewLength) ? formatTimelineTick(day, viewLength) : ""}</b>)}
@@ -1598,7 +1605,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                       .sort((a, b) => a.startDay - b.startDay || a.endDay - b.endDay);
                     const rowSelected = task.id === selected.id || rowBars.some((rowTask) => rowTask.id === selected.id);
                     return (
-                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: timelineDays.length * timelineDayWidth }}>
+                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: trackViewportWidth }}>
                         <div className="task-gantt-track">
                           {task.dependsOn?.map((dependencyId) => <span className="task-dependency-dot" key={dependencyId} title={dependencyId} />)}
                           {rowBars.slice(1).map((rowTask, index) => {
@@ -1607,7 +1614,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                             const linkEnd = (rowTask.startDay - viewStart) * timelineDayWidth;
                             const linkLeft = Math.min(linkStart, linkEnd);
                             const linkWidth = Math.abs(linkEnd - linkStart);
-                            const linkClipped = previousTask.endDay < viewStart || rowTask.startDay > viewStart + viewLength || linkWidth < 10;
+                            const linkClipped = previousTask.endDay < viewStart || rowTask.startDay > viewEnd || linkWidth < 10;
                             const color = taskBarColor(rowTask);
                             if (linkClipped) return null;
                             return (
@@ -1627,7 +1634,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                           {rowBars.map((rowTask) => {
                             const left = (rowTask.startDay - viewStart) * timelineDayWidth;
                             const width = Math.max(18, (rowTask.endDay - rowTask.startDay + 1) * timelineDayWidth);
-                            const clipped = rowTask.endDay < viewStart || rowTask.startDay > viewStart + viewLength;
+                            const clipped = rowTask.endDay < viewStart || rowTask.startDay > viewEnd;
                             if (clipped) return null;
                             return (
                               <div
@@ -1675,11 +1682,12 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                   }}
                   onFocusRange={(task) => {
                     const taskDuration = Math.max(1, task.endDay - task.startDay + 1);
-                    const minimumWindow = Math.min(90, maxVisibleDays);
-                    const preferredWindow = clamp(Math.max(minimumWindow, taskDuration * 4), minimumWindow, maxVisibleDays);
-                    const focusPadding = Math.max(8, Math.round((preferredWindow - taskDuration) / 2));
+                    const titleReadableWidth = clamp(task.title.length * 14 + 96, trackViewportWidth * 0.5, trackViewportWidth * 0.82);
+                    const titleFitWindow = Math.floor((taskDuration * trackViewportWidth) / titleReadableWidth);
+                    const preferredWindow = clamp(Math.max(minVisibleDays, Math.min(taskDuration * 2, titleFitWindow)), minVisibleDays, maxVisibleDays);
+                    const taskCenter = (task.startDay + task.endDay) / 2;
                     const maxStart = Math.max(totalStart, totalEnd - preferredWindow + 1);
-                    setViewStart(clamp(task.startDay - focusPadding, totalStart, maxStart));
+                    setViewStart(clamp(Math.round(taskCenter - preferredWindow / 2), totalStart, maxStart));
                     setViewLength(preferredWindow);
                   }}
                   onToggleChildren={() => updateTask(timelinePopoverTask.id, { collapsed: !timelinePopoverTask.collapsed })}
