@@ -113,7 +113,9 @@ function formatDay(day: number) {
   const date = dateFromDay(day);
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const dayOfMonth = String(date.getDate()).padStart(2, "0");
-  return `${month}.${dayOfMonth}`;
+  const currentYear = todayStart().getFullYear();
+  const year = date.getFullYear();
+  return year === currentYear ? `${month}.${dayOfMonth}` : `${year}.${month}.${dayOfMonth}`;
 }
 
 function normalizeDateInput(value: string) {
