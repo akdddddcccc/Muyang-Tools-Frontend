@@ -1493,14 +1493,20 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
           <span>{message}</span>
         </section>
 
-        <nav className="task-phase-switch" aria-label={isEnglish ? "Task map phase" : "任务规划阶段"}>
-          <button className={phase === "structure" ? "selected" : ""} type="button" onClick={() => setPhase("structure")}>
-            <span>01</span>{isEnglish ? "Structure map" : "结构拆解"}
-          </button>
-          <button className={phase === "timeline" ? "selected" : ""} type="button" onClick={() => setPhase("timeline")}>
-            <span>02</span>{isEnglish ? "Timeline" : "时间规划"}
-          </button>
-        </nav>
+        <div className="task-phase-toolbar">
+          <nav className="task-phase-switch" aria-label={isEnglish ? "Task map phase" : "任务规划阶段"}>
+            <button className={phase === "structure" ? "selected" : ""} type="button" onClick={() => setPhase("structure")}>
+              <span>01</span>{isEnglish ? "Structure map" : "结构拆解"}
+            </button>
+            <button className={phase === "timeline" ? "selected" : ""} type="button" onClick={() => setPhase("timeline")}>
+              <span>02</span>{isEnglish ? "Timeline" : "时间规划"}
+            </button>
+          </nav>
+          <div className="task-export-actions">
+            <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Export PDF" : "导出 PDF"}</button>
+            <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Export HTML" : "导出 HTML"}</button>
+          </div>
+        </div>
 
         {phase === "structure" ? (
           <section className="task-map-structure-workbench">
@@ -1591,9 +1597,6 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                     <span className="task-fullscreen-icon" aria-hidden="true" />
                     <span>{fullscreenPanel === "timeline" ? (isEnglish ? "Exit fullscreen" : "退出全屏") : (isEnglish ? "Enter fullscreen" : "进入全屏")}</span>
                   </button>
-                  <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Todo PDF" : "清单 PDF"}</button>
-                  <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Interactive HTML" : "交互 HTML"}</button>
-                  <button type="button" onClick={() => { setViewStart(totalStart); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
                 </div>
               </div>
 
@@ -1606,6 +1609,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                   <div className="task-overview-control with-number">
                     <input type="range" min={minVisibleDays} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(Number(event.target.value))} />
                     <input type="number" min={minVisibleDays} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(clamp(Number(event.target.value), minVisibleDays, maxVisibleDays))} aria-label={isEnglish ? "Visible days" : "显示天数"} />
+                    <button className="task-fit-all-button" type="button" onClick={() => { setViewStart(totalStart); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
                   </div>
                 </label>
                 <label className="task-root-date-field">

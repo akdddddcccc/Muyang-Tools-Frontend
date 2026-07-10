@@ -36,6 +36,7 @@
 
 .task-map-header-actions,
 .task-map-range,
+.task-export-actions,
 .task-editor-actions {
   display: flex;
   align-items: center;
@@ -44,8 +45,10 @@
 
 .task-map-header-actions > button,
 .task-map-range button,
+.task-export-actions button,
 .task-editor-actions button,
-.task-panel-title button {
+.task-panel-title button,
+.task-fit-all-button {
   padding: 8px 10px;
   color: #cfe2d6;
   background: #111a21;
@@ -57,8 +60,10 @@
 
 .task-map-header-actions > button:hover,
 .task-map-range button:hover,
+.task-export-actions button:hover,
 .task-editor-actions button:hover,
-.task-panel-title button:hover {
+.task-panel-title button:hover,
+.task-fit-all-button:hover {
   border-color: #7bf89c;
   color: #7bf89c;
 }
@@ -138,14 +143,25 @@
   display: block;
 }
 
+.task-phase-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
 .task-phase-switch {
   display: inline-flex;
   gap: 0;
   overflow: hidden;
-  margin-bottom: 14px;
   border: 1px solid #26313a;
   border-radius: 7px;
   background: #111a21;
+}
+
+.task-export-actions {
+  margin-left: auto;
 }
 
 .task-phase-switch button {
@@ -916,10 +932,11 @@
 }
 
 .task-overview-control.with-number {
-  grid-template-columns: minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(0, 1fr) 72px auto;
 }
 
-.task-overview-control input[type="number"] {
+.task-overview-control input[type="number"],
+.task-fit-all-button {
   height: 30px;
   padding: 0 8px;
   color: #edf4ef;
@@ -928,6 +945,11 @@
   border-radius: 5px;
   outline: 0;
   font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.task-fit-all-button {
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .task-overview-control input[type="number"]:focus {
@@ -1387,6 +1409,16 @@
   .task-overview {
     grid-template-columns: 1fr;
   }
+
+  .task-phase-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .task-export-actions {
+    margin-left: 0;
+    justify-content: flex-end;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1402,6 +1434,14 @@
 
   .task-map-main {
     padding: 18px 12px 36px;
+  }
+
+  .task-export-actions {
+    justify-content: stretch;
+  }
+
+  .task-export-actions button {
+    flex: 1;
   }
 
   .task-map-hero h2 {
