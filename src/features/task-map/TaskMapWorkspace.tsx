@@ -118,6 +118,26 @@ function formatDay(day: number) {
   return year === currentYear ? `${month}.${dayOfMonth}` : `${year}.${month}.${dayOfMonth}`;
 }
 
+function formatTimelineTick(day: number, visibleDays: number) {
+  const date = dateFromDay(day);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dayOfMonth = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  const currentYear = todayStart().getFullYear();
+  if (visibleDays >= 900) return String(year);
+  if (visibleDays >= 120) return year === currentYear ? `${month}月` : `${year}.${month}`;
+  return year === currentYear ? `${month}.${dayOfMonth}` : `${year}.${month}.${dayOfMonth}`;
+}
+
+function shouldShowTimelineTick(day: number, index: number, visibleDays: number) {
+  const date = dateFromDay(day);
+  if (index === 0) return true;
+  if (visibleDays >= 900) return date.getMonth() === 0 && date.getDate() === 1;
+  if (visibleDays >= 120) return date.getDate() === 1;
+  if (visibleDays >= 60) return index % 14 === 0;
+  return index % 7 === 0;
+}
+
 function normalizeDateInput(value: string) {
   return value
     .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
@@ -469,7 +489,10 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const totalDays = totalEnd - totalStart + 1;
   const maxVisibleDays = Math.max(24, totalDays);
   const trackViewportWidth = Math.max(360, chartWidth);
-  const timelineDayWidth = clamp(trackViewportWidth / Math.max(1, viewLength), minDayWidth, maxDayWidth);
+  const isFullTimelineView = viewLength >= totalDays;
+  const timelineDayWidth = isFullTimelineView
+    ? trackViewportWidth / Math.max(1, totalDays)
+    : clamp(trackViewportWidth / Math.max(1, viewLength), minDayWidth, maxDayWidth);
   const timelineDays = Array.from({ length: totalDays }, (_, index) => totalStart + index);
   const taskBarColor = (task: TaskNode & { depth: number }) => {
     const depth = Math.max(0, task.depth);
@@ -1110,9 +1133,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     const exportDayWidth = 18;
     const rowHeight = 46;
     const rows = collectVisibleTaskRows(root, childrenByParent);
-    const dateLabels = Array.from({ length: totalDays }, (_, index) => totalStart + index)
-      .filter((day) => day % 7 === 0)
-      .map((day) => `<span style="left:${labelWidth + (day - totalStart) * exportDayWidth}px">${formatDay(day)}</span>`)
+    const dateLabels = Array.from({ length: totalDays }, (_, index) => ({ day: totalStart + index, index }))
+      .filter(({ day, index }) => shouldShowTimelineTick(day, index, totalDays))
+      .map(({ day }) => `<span style="left:${labelWidth + (day - totalStart) * exportDayWidth}px">${formatTimelineTick(day, totalDays)}</span>`)
       .join("");
     const rowHtml = rows.map((task, index) => {
       const color = taskBarColor(task);
@@ -1208,9 +1231,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     const exportSpanDays = Math.max(1, exportEndDay - exportStartDay + 1);
     const toTimelinePercent = (day: number) => ((day - exportStartDay) / exportSpanDays) * 100;
     const toDurationPercent = (startDay: number, endDay: number) => ((endDay - startDay + 1) / exportSpanDays) * 100;
-    const dateLabels = Array.from({ length: exportSpanDays }, (_, index) => exportStartDay + index)
-      .filter((day) => (day - exportStartDay) % 7 === 0 || day === exportEndDay)
-      .map((day) => `<span style="left:${toTimelinePercent(day)}%">${formatDay(day)}</span>`)
+    const dateLabels = Array.from({ length: exportSpanDays }, (_, index) => ({ day: exportStartDay + index, index }))
+      .filter(({ day, index }) => shouldShowTimelineTick(day, index, exportSpanDays) || day === exportEndDay)
+      .map(({ day }) => `<span style="left:${toTimelinePercent(day)}%">${formatTimelineTick(day, exportSpanDays)}</span>`)
       .join("");
     const rowHtml = rows.map((task, index) => {
       const color = taskBarColor(task);
@@ -1464,7 +1487,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 <div className="task-map-range">
                   <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Todo PDF" : "清单 PDF"}</button>
                   <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Interactive HTML" : "交互 HTML"}</button>
-                  <button type="button" onClick={() => { setViewStart(0); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
+                  <button type="button" onClick={() => { setViewStart(totalStart); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
                 </div>
               </div>
 
@@ -1485,7 +1508,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 <div className="task-gantt-grid" style={{ width: timelineDays.length * timelineDayWidth, minWidth: timelineDays.length * timelineDayWidth }}>
                   <div className="task-gantt-dates">
                     <div className="task-gantt-date-track" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, ${timelineDayWidth}px)` }}>
-                      {timelineDays.map((day) => <b key={day}>{day % 7 === 0 ? formatDay(day) : ""}</b>)}
+                      {timelineDays.map((day, index) => <b key={day}>{shouldShowTimelineTick(day, index, viewLength) ? formatTimelineTick(day, viewLength) : ""}</b>)}
                     </div>
                   </div>
                   {ganttRows.map((task) => {
