@@ -371,13 +371,33 @@
   letter-spacing: .09em;
 }
 
-.mind-node-main strong {
+.mind-node-title-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
   overflow: hidden;
   color: #edf4ef;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  outline: 0;
   font-size: 13px;
+  font-weight: 750;
   line-height: 1.24;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mind-node-title-input:hover {
+  color: #f6fff8;
+}
+
+.mind-node-title-input:focus {
+  padding: 2px 4px;
+  margin: -2px -4px;
+  background: rgba(123, 248, 156, .08);
+  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .46), 0 0 14px rgba(123, 248, 156, .1);
 }
 
 .mind-node-main small {
@@ -522,6 +542,14 @@
   border-bottom: 1px solid #26313a;
 }
 
+.mind-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
 .task-shortcut-hint {
   flex: 1;
   overflow: hidden;
@@ -531,6 +559,57 @@
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mind-init-button {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 14px;
+  color: #eaffef;
+  background: #0b1015;
+  border: 1px solid rgba(123, 248, 156, .52);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 0 16px rgba(123, 248, 156, .12);
+}
+
+.mind-init-button::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  inset: -2px;
+  background: conic-gradient(from 0deg, rgba(123, 248, 156, .18), #7bf89c, #e7ff58, #67d9ff, rgba(123, 248, 156, .18));
+  animation: mind-init-flow 2.8s linear infinite;
+}
+
+.mind-init-button::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  background: linear-gradient(135deg, rgba(20, 38, 27, .96), rgba(11, 16, 21, .96));
+  border-radius: inherit;
+}
+
+.mind-init-button:hover {
+  color: #07100a;
+  border-color: #e7ff58;
+  box-shadow: 0 0 24px rgba(231, 255, 88, .2), 0 0 34px rgba(123, 248, 156, .14);
+}
+
+.mind-init-button:hover::after {
+  background: linear-gradient(135deg, #7bf89c, #e7ff58);
+}
+
+@keyframes mind-init-flow {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 .task-tree {
@@ -601,62 +680,6 @@
 .task-editor {
   padding: 14px;
   border-top: 1px solid #26313a;
-}
-
-.task-root-setup {
-  display: grid;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid #26313a;
-  background: rgba(123, 248, 156, .035);
-}
-
-.task-root-setup label {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  color: #89a195;
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.task-root-setup label span {
-  color: #7bf89c;
-  font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .08em;
-}
-
-.task-root-setup input {
-  width: 100%;
-  height: 38px;
-  padding: 0 10px;
-  color: #edf4ef;
-  background: #0b1015;
-  border: 1px solid #2d3a43;
-  border-radius: 6px;
-  outline: 0;
-}
-
-.task-root-setup input:focus {
-  border-color: #7bf89c;
-  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .16);
-}
-
-.task-root-setup button {
-  justify-self: start;
-  padding: 8px 10px;
-  color: #07100a;
-  background: #7bf89c;
-  border: 1px solid #7bf89c;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.task-root-setup button:disabled {
-  cursor: not-allowed;
-  opacity: .45;
 }
 
 .task-editor label {

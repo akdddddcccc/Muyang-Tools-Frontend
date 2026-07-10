@@ -40,6 +40,7 @@ type MindNodeData = {
   busy: boolean;
   root: boolean;
   onSelect: (id: string) => void;
+  onRename: (id: string, title: string) => void;
   onAddChild: (id: string) => void;
   onAiBreakdown: (id: string) => void;
   onToggle: (id: string) => void;
@@ -279,7 +280,26 @@ const MindMapNode = memo(function MindMapNode({ data }: NodeProps<Node<MindNodeD
         }}
       >
         <span>{data.root ? "ROOT" : `L${data.depth}`}</span>
-        <strong>{data.task.title}</strong>
+        <input
+          className="mind-node-title-input nodrag"
+          value={data.task.title}
+          aria-label="Task title"
+          onFocus={(event) => {
+            data.onSelect(data.task.id);
+            event.currentTarget.select();
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onChange={(event) => data.onRename(data.task.id, event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          }}
+        />
         {data.task.note ? <small>{data.task.note}</small> : null}
       </div>
       <div className="mind-node-actions">
@@ -509,14 +529,18 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     removeTasks([id]);
   };
 
-  const removeChildTasks = (parentId: string) => {
-    const childIds = tasks.filter((task) => task.parentId === parentId).map((task) => task.id);
-    if (!childIds.length) {
-      setMessage(isEnglish ? "No child tasks to delete." : "当前节点没有可删除的子节点。");
-      return;
-    }
-    removeTasks(childIds);
-    selectTask(parentId);
+  const initializeRootTask = () => {
+    const rootOnly: TaskNode[] = [{
+      ...root,
+      title: isEnglish ? "To rename" : "待重命名",
+      parentId: undefined,
+      collapsed: false,
+      dependsOn: undefined,
+    }];
+    persist(rootOnly);
+    setSelectedNodeIds([root.id]);
+    setNodePositions((positions) => root.id in positions ? { [root.id]: positions[root.id] } : {});
+    setMessage(isEnglish ? "Root goal initialized. Rename it directly on the node." : "已初始化总任务，请直接点击节点标题重命名。");
   };
 
   const resetProject = () => {
@@ -832,6 +856,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
             busy: isBusy,
             root: task.id === root.id,
             onSelect: selectTask,
+            onRename: (id, title) => updateTask(id, { title }),
             onAddChild: addChildById,
             onAiBreakdown: createAiBreakdownById,
             onToggle: toggleTaskById,
@@ -1299,7 +1324,12 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
             <section className="mind-map-panel">
               <div className="task-panel-title">
                 <span>{isEnglish ? "Mind Map / Logic" : "思维导图 / 逻辑关系"}</span>
-                <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
+                <div className="mind-panel-actions">
+                  <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
+                  <button className="mind-init-button" type="button" onClick={initializeRootTask}>
+                    {isEnglish ? "Initialize" : "初始化"}
+                  </button>
+                </div>
               </div>
               <div className="mind-map-canvas" tabIndex={0} onKeyDown={handleMindMapKeyDown}>
                 <ReactFlow
@@ -1343,15 +1373,6 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 <span>{isEnglish ? "Selected Node" : "当前节点"}</span>
                 <button type="button" onClick={() => addChild()}>{isEnglish ? "Add" : "新增"}</button>
               </div>
-              <div className="task-root-setup">
-                <label>
-                  <span>{isEnglish ? "Root goal" : "总目标初始化"}</span>
-                  <input value={root.title} onChange={(event) => updateTask(root.id, { title: event.target.value })} placeholder={isEnglish ? "Rename the root goal" : "重命名最高父级总任务"} />
-                </label>
-                <button type="button" onClick={() => removeChildTasks(root.id)} disabled={!Boolean((childrenByParent.get(root.id) ?? []).length)}>
-                  {isEnglish ? "Clear root children" : "清空全部子节点"}
-                </button>
-              </div>
               <TaskTree
                 rows={visibleTasks}
                 selectedId={selected.id}
@@ -1370,7 +1391,6 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 onAiBreakdown={() => void createAiBreakdown()}
                 onSchedule={scheduleChildren}
                 onDelete={removeTask}
-                onDeleteChildren={() => removeChildTasks(selected.id)}
               />
             </aside>
           </section>
@@ -1561,7 +1581,7 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
   );
 }
 
-function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren, onUpdate, onAiBreakdown, onSchedule, onDelete, onDeleteChildren }: {
+function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren, onUpdate, onAiBreakdown, onSchedule, onDelete }: {
   isEnglish: boolean;
   actionMode: TaskPhase extends infer _ ? "breakdown" | "schedule" : never;
   selected: TaskNode;
@@ -1572,7 +1592,6 @@ function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren
   onAiBreakdown: () => void;
   onSchedule: () => void;
   onDelete: (id: string) => void;
-  onDeleteChildren: () => void;
 }) {
   return (
     <div className="task-editor">
@@ -1590,7 +1609,6 @@ function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren
         ) : (
           <button type="button" onClick={onSchedule} disabled={isBusy || !hasChildren}>{isEnglish ? "AI schedule" : "AI 时间初排"}</button>
         )}
-        <button type="button" onClick={onDeleteChildren} disabled={!hasChildren}>{isEnglish ? "Clear children" : "清空子节点"}</button>
         <button type="button" onClick={() => onDelete(selected.id)} disabled={selected.id === root.id}>{isEnglish ? "Delete" : "删除"}</button>
       </div>
     </div>
