@@ -444,6 +444,8 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const [message, setMessage] = useState(isEnglish ? "Ready." : "已就绪。");
   const [isBusy, setIsBusy] = useState(false);
   const [timelinePopover, setTimelinePopover] = useState<TimelinePopoverState>(null);
+  const [rootStartInput, setRootStartInput] = useState("");
+  const [rootEndInput, setRootEndInput] = useState("");
   const chartRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const dragHoldTimerRef = useRef<number | null>(null);
@@ -538,6 +540,14 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     if (viewLength > maxVisibleDays) setViewLength(maxVisibleDays);
   }, [maxVisibleDays, totalDays, totalStart, viewLength, viewStart]);
 
+  useEffect(() => {
+    setRootStartInput(formatDay(root.startDay));
+  }, [root.id, root.startDay]);
+
+  useEffect(() => {
+    setRootEndInput(formatDay(root.endDay));
+  }, [root.id, root.endDay]);
+
   const persist = (nextTasks: TaskNode[]) => {
     const normalizedTasks = includeAncestorRanges(nextTasks);
     setTasks(normalizedTasks);
@@ -551,6 +561,42 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
 
   const updateTask = (id: string, patch: Partial<TaskNode>) => {
     persist(tasks.map((task) => task.id === id ? { ...task, ...patch } : task));
+  };
+
+  const commitRootDateInput = (kind: "start" | "end") => {
+    const rawValue = kind === "start" ? rootStartInput : rootEndInput;
+    const parsedDay = parseTimelineDateInput(rawValue);
+    if (parsedDay === null) {
+      if (kind === "start") setRootStartInput(formatDay(root.startDay));
+      else setRootEndInput(formatDay(root.endDay));
+      return;
+    }
+    if (kind === "start") {
+      const nextStart = parsedDay;
+      const nextEnd = nextStart > root.endDay - minDuration ? nextStart + minDuration : root.endDay;
+      updateTask(root.id, { startDay: nextStart, endDay: nextEnd });
+      setRootStartInput(formatDay(nextStart));
+    } else {
+      const nextEnd = parsedDay;
+      const nextStart = nextEnd < root.startDay + minDuration ? nextEnd - minDuration : root.startDay;
+      updateTask(root.id, { startDay: nextStart, endDay: nextEnd });
+      setRootEndInput(formatDay(nextEnd));
+    }
+  };
+
+  const handleRootDateKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, kind: "start" | "end") => {
+    event.stopPropagation();
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRootDateInput(kind);
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      if (kind === "start") setRootStartInput(formatDay(root.startDay));
+      else setRootEndInput(formatDay(root.endDay));
+      event.currentTarget.blur();
+    }
   };
 
   const insertTask = (parent: TaskNode, options?: { title?: string; note?: string; select?: boolean }) => {
@@ -1502,6 +1548,38 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                     <input type="number" min={24} max={maxVisibleDays} value={viewLength} onChange={(event) => setViewLength(clamp(Number(event.target.value), 24, maxVisibleDays))} aria-label={isEnglish ? "Visible days" : "显示天数"} />
                   </div>
                 </label>
+                <label className="task-root-date-field">
+                  <span>
+                    <b>{isEnglish ? "Project start" : "项目开始"}</b>
+                    <em>{formatDay(root.startDay)}</em>
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={rootStartInput}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => setRootStartInput(event.target.value)}
+                    onBlur={() => commitRootDateInput("start")}
+                    onKeyDown={(event) => handleRootDateKeyDown(event, "start")}
+                    aria-label={isEnglish ? "Project start date" : "项目开始日期"}
+                  />
+                </label>
+                <label className="task-root-date-field">
+                  <span>
+                    <b>{isEnglish ? "Project end" : "项目结束"}</b>
+                    <em>{formatDay(root.endDay)}</em>
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={rootEndInput}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => setRootEndInput(event.target.value)}
+                    onBlur={() => commitRootDateInput("end")}
+                    onKeyDown={(event) => handleRootDateKeyDown(event, "end")}
+                    aria-label={isEnglish ? "Project end date" : "项目结束日期"}
+                  />
+                </label>
               </div>
 
               <div className="task-gantt-scroll" ref={chartRef} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
@@ -1564,9 +1642,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                                   if (event.key === "Enter" || event.key === " ") openTimelinePopover(event, rowTask);
                                 }}
                               >
-                                <i className="task-bar-handle start" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "start"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />
+                                {rowTask.id === root.id ? null : <i className="task-bar-handle start" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "start"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
                                 <span>{rowTask.title}</span>
-                                <i className="task-bar-handle end" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "end"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />
+                                {rowTask.id === root.id ? null : <i className="task-bar-handle end" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "end"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
                               </div>
                             );
                           })}

@@ -740,7 +740,7 @@
 
 .task-overview {
   display: grid;
-  grid-template-columns: minmax(220px, 520px);
+  grid-template-columns: minmax(260px, 1.2fr) minmax(170px, .45fr) minmax(170px, .45fr);
   gap: 18px;
   padding: 10px 14px;
   border-bottom: 1px solid #26313a;
@@ -780,6 +780,22 @@
 .task-overview input {
   width: 100%;
   accent-color: #7bf89c;
+}
+
+.task-root-date-field input {
+  height: 30px;
+  padding: 0 8px;
+  color: #edf4ef;
+  background: #0b1015;
+  border: 1px solid #2d3a43;
+  border-radius: 5px;
+  outline: 0;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.task-root-date-field input:focus {
+  border-color: #7bf89c;
+  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .16);
 }
 
 .task-overview-control {
@@ -952,11 +968,10 @@
   --task-bar-shadow: rgba(103, 217, 255, .34);
   color: #06110d;
   background:
-    linear-gradient(90deg, #e7ff58 0%, #7bf89c 32%, #67d9ff 66%, #e7ff58 100%);
-  background-size: 240% 100%;
+    linear-gradient(90deg, #e7ff58 0%, #7bf89c 31%, #67d9ff 62%, #ff5b5b 100%);
+  background-size: 100% 100%;
   border-color: rgba(231, 255, 88, .76);
   box-shadow: 0 14px 30px rgba(0, 0, 0, .24), 0 0 28px rgba(123, 248, 156, .18), 0 0 34px rgba(103, 217, 255, .16);
-  animation: task-root-bar-flow 4.8s linear infinite;
 }
 
 .task-bar.root::before {
@@ -965,17 +980,6 @@
     radial-gradient(circle at 18% 50%, rgba(255, 255, 255, .4), transparent 28%),
     radial-gradient(circle at 72% 45%, rgba(255, 255, 255, .28), transparent 24%);
   opacity: .7;
-}
-
-.task-bar.root .task-bar-handle {
-  background: #e7ff58;
-  border-color: rgba(103, 217, 255, .78);
-}
-
-@keyframes task-root-bar-flow {
-  to {
-    background-position: 240% 0;
-  }
 }
 
 .task-bar::after {
