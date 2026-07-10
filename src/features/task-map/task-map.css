@@ -947,6 +947,37 @@
   border-radius: inherit;
 }
 
+.task-bar.root {
+  --task-bar-border: rgba(231, 255, 88, .72);
+  --task-bar-shadow: rgba(103, 217, 255, .34);
+  color: #06110d;
+  background:
+    linear-gradient(90deg, #e7ff58 0%, #7bf89c 32%, #67d9ff 66%, #e7ff58 100%);
+  background-size: 240% 100%;
+  border-color: rgba(231, 255, 88, .76);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .24), 0 0 28px rgba(123, 248, 156, .18), 0 0 34px rgba(103, 217, 255, .16);
+  animation: task-root-bar-flow 4.8s linear infinite;
+}
+
+.task-bar.root::before {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .32), transparent 48%, rgba(0, 0, 0, .1)),
+    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, .4), transparent 28%),
+    radial-gradient(circle at 72% 45%, rgba(255, 255, 255, .28), transparent 24%);
+  opacity: .7;
+}
+
+.task-bar.root .task-bar-handle {
+  background: #e7ff58;
+  border-color: rgba(103, 217, 255, .78);
+}
+
+@keyframes task-root-bar-flow {
+  to {
+    background-position: 240% 0;
+  }
+}
+
 .task-bar::after {
   content: "设置";
   position: absolute;

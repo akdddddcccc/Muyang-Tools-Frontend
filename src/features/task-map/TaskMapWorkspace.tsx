@@ -765,7 +765,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     const currentTasks = latestTasksRef.current;
     const task = currentTasks.find((item) => item.id === drag.id);
     if (!task) return;
-    const minStart = 0;
+    const minStart = -36500;
     const maxEnd = Math.max(totalEnd, drag.originalEnd + Math.abs(delta) + 30);
     let startDay = drag.originalStart;
     let endDay = drag.originalEnd;
@@ -1527,7 +1527,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                             if (clipped) return null;
                             return (
                               <div
-                                className={`task-bar depth-${Math.min(rowTask.depth, 3)}`}
+                                className={`task-bar depth-${Math.min(rowTask.depth, 3)}${rowTask.id === root.id ? " root" : ""}`}
                                 key={rowTask.id}
                                 style={taskBarStyle(rowTask, left, width)}
                                 role="button"
