@@ -97,7 +97,12 @@ function createId(prefix = "task") {
 }
 
 function formatDay(day: number) {
-  return `D+${String(Math.max(0, Math.round(day))).padStart(2, "0")}`;
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + Math.max(0, Math.round(day)));
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const dayOfMonth = String(date.getDate()).padStart(2, "0");
+  return `${month}.${dayOfMonth}`;
 }
 
 function fallbackBreakdown(task: TaskNode): TaskMapBreakdownItem[] {
@@ -202,11 +207,41 @@ function applySequentialLaneDependencies(tasks: TaskNode[], parentId: string | u
     if (index < 0) return task;
     const externalDependencies = task.dependsOn?.filter((id) => !siblingIds.has(id)) ?? [];
     const previous = siblings[index - 1];
+    const duration = Math.max(minDuration, task.endDay - task.startDay);
+    const startDay = previous ? Math.max(task.startDay, previous.endDay + 1) : task.startDay;
+    const endDay = startDay === task.startDay ? task.endDay : startDay + duration;
     return {
       ...task,
+      startDay,
+      endDay,
       dependsOn: previous ? [...externalDependencies, previous.id] : externalDependencies.length ? externalDependencies : undefined,
     };
   });
+}
+
+function compactSiblingLanes(tasks: TaskNode[], parentId: string | undefined) {
+  const siblings = tasks.filter((task) => task.parentId === parentId);
+  const lanes = [...new Set(siblings.map((task) => task.lane))].sort((a, b) => a - b);
+  const laneMap = new Map(lanes.map((lane, index) => [lane, index]));
+  return tasks.map((task) => {
+    if (task.parentId !== parentId) return task;
+    const lane = laneMap.get(task.lane) ?? task.lane;
+    return lane === task.lane ? task : { ...task, lane };
+  });
+}
+
+function normalizeTimelineTasks(tasks: TaskNode[]) {
+  const parentIds = new Set(tasks.map((task) => task.parentId));
+  let nextTasks = tasks;
+  parentIds.forEach((parentId) => {
+    nextTasks = compactSiblingLanes(nextTasks, parentId);
+  });
+  const laneKeys = new Set(nextTasks.map((task) => `${task.parentId ?? "__root__"}:${task.lane}`));
+  laneKeys.forEach((key) => {
+    const [parentKey, laneValue] = key.split(":");
+    nextTasks = applySequentialLaneDependencies(nextTasks, parentKey === "__root__" ? undefined : parentKey, Number(laneValue));
+  });
+  return includeAncestorRanges(nextTasks);
 }
 
 function firstLevelBranch(task: TaskNode, root: TaskNode, tasks: TaskNode[]) {
@@ -341,13 +376,17 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     });
     return hosts;
   }, [visibleTasks]);
+  const ganttRows = useMemo(
+    () => visibleTasks.filter((task) => ganttLaneHostByTaskId.get(task.id) === task.id),
+    [ganttLaneHostByTaskId, visibleTasks],
+  );
 
   const totalEnd = Math.max(...tasks.map((task) => task.endDay), 120);
   const totalDays = totalEnd + 1;
   const maxVisibleDays = Math.max(24, totalDays);
-  const trackViewportWidth = Math.max(360, chartWidth - 260);
+  const trackViewportWidth = Math.max(360, chartWidth);
   const timelineDayWidth = clamp(trackViewportWidth / Math.max(1, viewLength), minDayWidth, maxDayWidth);
-  const timelineDays = Array.from({ length: viewLength }, (_, index) => viewStart + index);
+  const timelineDays = Array.from({ length: totalDays }, (_, index) => index);
   const taskBarColor = (task: TaskNode & { depth: number }) => {
     const depth = Math.max(0, task.depth);
     const rootChildren = directChildren(root.id, tasks);
@@ -388,8 +427,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, [phase]);
 
   useEffect(() => {
-    const maxStart = Math.max(0, totalDays - viewLength);
-    if (viewStart > maxStart) setViewStart(maxStart);
+    if (viewStart !== 0) setViewStart(0);
     if (viewLength > maxVisibleDays) setViewLength(maxVisibleDays);
   }, [maxVisibleDays, totalDays, viewLength, viewStart]);
 
@@ -469,6 +507,16 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
 
   const removeTask = (id: string) => {
     removeTasks([id]);
+  };
+
+  const removeChildTasks = (parentId: string) => {
+    const childIds = tasks.filter((task) => task.parentId === parentId).map((task) => task.id);
+    if (!childIds.length) {
+      setMessage(isEnglish ? "No child tasks to delete." : "当前节点没有可删除的子节点。");
+      return;
+    }
+    removeTasks(childIds);
+    selectTask(parentId);
   };
 
   const resetProject = () => {
@@ -676,7 +724,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
           setMessage(isEnglish ? "Same-level tasks linked in sequence." : "已将同级任务拖入同一轨道，并生成承接关系。");
         }
       }
-      const normalizedTasks = includeAncestorRanges(nextTasks);
+      const normalizedTasks = normalizeTimelineTasks(nextTasks);
       setTasks(normalizedTasks);
       window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
       const shouldOpenPopover = Boolean(event && task && drag.mode === "move" && !drag.activated && !drag.changed);
@@ -915,7 +963,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     const children = childrenByParent.get(task.id) ?? [];
     const color = taskBarColor({ ...task, depth });
     return `
-      <details class="mind-node depth-${Math.min(depth, 4)}${children.length ? "" : " leaf"}" ${depth < 2 ? "open" : ""}>
+      <details class="mind-node depth-${Math.min(depth, 4)}${children.length ? "" : " leaf"}" data-id="${escapeHtml(task.id)}" data-parent="${escapeHtml(task.parentId ?? "")}" ${depth < 2 ? "open" : ""}>
         <summary style="--node-color:${color.bg};--node-shadow:${color.shadow}">
           <span class="knot"></span>
           <span class="copy">
@@ -949,8 +997,8 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     small{display:block;margin-top:4px;color:#89a195;font-size:11px;line-height:1.4}
     .mind-children{position:relative;display:none;flex-direction:column;gap:16px}
     details[open]>.mind-children{display:flex}
-    .mind-children::before{content:"";position:absolute;left:-22px;top:28px;bottom:28px;width:1px;background:rgba(215,255,88,.42);box-shadow:0 0 12px rgba(215,255,88,.22)}
-    .mind-children>.mind-node::before{content:"";position:absolute;left:-22px;top:28px;width:22px;height:1px;background:rgba(215,255,88,.58);box-shadow:0 0 12px rgba(215,255,88,.22)}
+    .mind-children::before{content:"";position:absolute;left:-24px;top:28px;bottom:28px;width:1px;background:linear-gradient(180deg,transparent,rgba(215,255,88,.5),transparent);box-shadow:0 0 12px rgba(215,255,88,.22)}
+    .mind-children>.mind-node::before{content:"";position:absolute;left:-24px;top:17px;width:28px;height:28px;border-left:1px solid rgba(215,255,88,.56);border-bottom:1px solid rgba(215,255,88,.62);border-bottom-left-radius:28px;box-shadow:-4px 6px 12px rgba(215,255,88,.12)}
     .leaf>summary{cursor:default}
     .depth-0>summary{background:#14261b;border-color:rgba(123,248,156,.64)}
   </style>
@@ -1062,6 +1110,154 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     downloadHtml(`muyang-task-map-gantt-${new Date().toISOString().slice(0, 10)}.html`, html);
   };
 
+  const exportInteractiveTaskMapHtml = () => {
+    const labelWidth = 280;
+    const rowHeight = 46;
+    const rows = collectVisibleTaskRows(root, childrenByParent);
+    const exportStartDay = Math.min(...rows.map((task) => task.startDay), 0);
+    const exportEndDay = Math.max(...rows.map((task) => task.endDay), totalEnd);
+    const exportSpanDays = Math.max(1, exportEndDay - exportStartDay + 1);
+    const toTimelinePercent = (day: number) => ((day - exportStartDay) / exportSpanDays) * 100;
+    const toDurationPercent = (startDay: number, endDay: number) => ((endDay - startDay + 1) / exportSpanDays) * 100;
+    const dateLabels = Array.from({ length: exportSpanDays }, (_, index) => exportStartDay + index)
+      .filter((day) => (day - exportStartDay) % 7 === 0 || day === exportEndDay)
+      .map((day) => `<span style="left:${toTimelinePercent(day)}%">${formatDay(day)}</span>`)
+      .join("");
+    const rowHtml = rows.map((task, index) => {
+      const color = taskBarColor(task);
+      const hasChildren = Boolean((childrenByParent.get(task.id) ?? []).length);
+      const barLeft = toTimelinePercent(task.startDay);
+      const barWidth = Math.max(1.4, toDurationPercent(task.startDay, task.endDay));
+      return `
+        <div class="gantt-row depth-${Math.min(task.depth, 4)}" data-id="${task.id}" data-parent="${task.parentId ?? ""}" data-depth="${task.depth}" style="top:${72 + index * rowHeight}px">
+          <button class="label" type="button" ${hasChildren ? `data-toggle="${task.id}"` : ""} style="padding-left:${12 + task.depth * 18}px">
+            <span>${hasChildren ? "▾" : "•"}</span>
+            <strong>${escapeHtml(task.title)}</strong>
+            <small>${formatDay(task.startDay)} - ${formatDay(task.endDay)}</small>
+          </button>
+          <div class="timeline">
+            <div class="bar" title="${escapeHtml(`${task.title} ${formatDay(task.startDay)} - ${formatDay(task.endDay)}`)}" style="left:${barLeft}%;width:${barWidth}%;background:${color.bg};border-color:${color.border};box-shadow:0 0 18px ${color.shadow}">${escapeHtml(task.title)}</div>
+          </div>
+        </div>`;
+    }).join("");
+    const html = `<!doctype html>
+<html lang="${language}">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(root.title)} - Task Map</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    header{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:20px;padding:18px 20px;border:1px solid #26313a;border-radius:8px;background:linear-gradient(110deg,rgba(123,248,156,.1),transparent 46%),#10171d}
+    p{margin:0 0 8px;color:#7bf89c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
+    h1{margin:0;font-size:28px;line-height:1.2}
+    .tabs{display:inline-flex;overflow:hidden;border:1px solid #26313a;border-radius:8px;background:#0b1015}
+    .tabs button{min-width:120px;padding:13px 18px;color:#89a195;background:transparent;border:0;border-right:1px solid #26313a;cursor:pointer;font-weight:800}
+    .tabs button:last-child{border-right:0}
+    .tabs button.selected{color:#06110d;background:#68f58f}
+    .view{display:none}
+    .view.active{display:block}
+    .map{overflow:auto;padding:28px;border:1px solid #26313a;border-radius:8px;background:radial-gradient(circle at 18% 18%,rgba(123,248,156,.08),transparent 26%),#10171d}
+    .mind-node{position:relative;display:inline-flex;align-items:flex-start;gap:34px;margin:0}
+    .mind-node>summary{position:relative;display:grid;grid-template-columns:16px minmax(190px,270px);gap:10px;align-items:start;min-height:58px;padding:12px;color:#edf4ef;background:#0d141a;border:1px solid rgba(123,248,156,.28);border-radius:8px;cursor:pointer;list-style:none;box-shadow:0 16px 34px rgba(0,0,0,.22)}
+    summary::-webkit-details-marker{display:none}
+    .mind-node>summary:hover{border-color:var(--node-color);box-shadow:0 0 24px var(--node-shadow)}
+    .knot{width:12px;height:12px;margin-top:4px;border-radius:999px;background:var(--node-color);box-shadow:0 0 18px var(--node-shadow)}
+    .copy strong{display:block;font-size:14px;line-height:1.3}
+    small{display:block;margin-top:4px;color:#89a195;font-size:11px;line-height:1.4}
+    .mind-children{position:relative;display:none;flex-direction:column;gap:16px}
+    details[open]>.mind-children{display:flex}
+    .mind-children::before{content:"";position:absolute;left:-24px;top:28px;bottom:28px;width:1px;background:linear-gradient(180deg,transparent,rgba(215,255,88,.5),transparent);box-shadow:0 0 12px rgba(215,255,88,.22)}
+    .mind-children>.mind-node::before{content:"";position:absolute;left:-24px;top:17px;width:28px;height:28px;border-left:1px solid rgba(215,255,88,.56);border-bottom:1px solid rgba(215,255,88,.62);border-bottom-left-radius:28px;box-shadow:-4px 6px 12px rgba(215,255,88,.12)}
+    .leaf>summary{cursor:default}
+    .depth-0>summary{background:#14261b;border-color:rgba(123,248,156,.64)}
+    .sheet{position:relative;overflow-x:hidden;overflow-y:auto;min-height:${110 + rows.length * rowHeight}px;border:1px solid #26313a;border-radius:8px;background:#10171d}
+    .canvas{position:relative;width:100%;min-width:0;min-height:${110 + rows.length * rowHeight}px;transition:min-height .22s ease}
+    .dates{position:absolute;left:${labelWidth}px;right:0;top:0;height:34px;border-bottom:1px solid #26313a;background:#10171d}
+    .dates span{position:absolute;top:10px;color:#71877c;font:9px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .gantt-row{position:absolute;left:0;width:100%;height:${rowHeight}px;border-bottom:1px solid rgba(38,49,58,.72);opacity:1;transform:translateY(0);transition:top .22s ease,opacity .18s ease,transform .22s ease}
+    .gantt-row.hidden{opacity:0;pointer-events:none;transform:translateY(-8px)}
+    .label{position:absolute;left:0;top:0;width:${labelWidth}px;height:${rowHeight}px;display:grid;grid-template-columns:18px minmax(0,1fr);align-items:center;column-gap:6px;text-align:left;color:#edf4ef;background:#10171d;border:0;border-right:1px solid #26313a;cursor:pointer}
+    .label span{color:#7bf89c;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .label strong,.label small{grid-column:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .label strong{font-size:12px}
+    .label small{margin-top:-10px;color:#71877c;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .timeline{position:absolute;left:${labelWidth}px;right:0;top:0;height:${rowHeight}px;background-image:linear-gradient(to right,rgba(255,255,255,.05) 1px,transparent 1px);background-size:8.333% 100%}
+    .bar{position:absolute;top:8px;height:30px;padding:7px 10px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#06110d;border:1px solid;border-radius:5px;font-size:11px;font-weight:760}
+    .bar::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent 46%,rgba(0,0,0,.07));pointer-events:none}
+  </style>
+</head>
+<body>
+  <header>
+    <div><p>MUYANG TASK MAP / INTERACTIVE EXPORT</p><h1>${escapeHtml(root.title)}</h1></div>
+    <nav class="tabs" aria-label="views">
+      <button type="button" class="selected" data-view="mind">01 ${isEnglish ? "Structure" : "结构拆解"}</button>
+      <button type="button" data-view="gantt">02 ${isEnglish ? "Timeline" : "时间规划"}</button>
+    </nav>
+  </header>
+  <section class="view active" data-panel="mind"><div class="map">${renderMindMapNode(root)}</div></section>
+  <section class="view" data-panel="gantt"><div class="sheet"><div class="canvas"><div class="dates">${dateLabels}</div>${rowHtml}</div></div></section>
+  <script>
+    document.querySelectorAll("[data-view]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("selected", item === button));
+        document.querySelectorAll("[data-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === button.dataset.view));
+      });
+    });
+    const rows = Array.from(document.querySelectorAll(".gantt-row"));
+    const canvas = document.querySelector(".canvas");
+    const sheet = document.querySelector(".sheet");
+    const collapsed = new Set();
+    function descendantsOf(id) {
+      const result = new Set();
+      let changed = true;
+      while (changed) {
+        changed = false;
+        rows.forEach((row) => {
+          const parent = row.dataset.parent;
+          if (parent && (parent === id || result.has(parent)) && !result.has(row.dataset.id)) {
+            result.add(row.dataset.id);
+            changed = true;
+          }
+        });
+      }
+      return result;
+    }
+    function updateRows() {
+      const hidden = new Set();
+      collapsed.forEach((id) => descendantsOf(id).forEach((child) => hidden.add(child)));
+      let visibleIndex = 0;
+      rows.forEach((row) => {
+        const isHidden = hidden.has(row.dataset.id);
+        row.classList.toggle("hidden", isHidden);
+        if (!isHidden) {
+          row.style.top = (72 + visibleIndex * ${rowHeight}) + "px";
+          visibleIndex += 1;
+        }
+      });
+      const height = 110 + visibleIndex * ${rowHeight};
+      if (canvas) canvas.style.minHeight = height + "px";
+      if (sheet) sheet.style.minHeight = height + "px";
+      document.querySelectorAll("[data-toggle]").forEach((button) => {
+        const id = button.dataset.toggle;
+        const icon = button.querySelector("span");
+        if (icon) icon.textContent = collapsed.has(id) ? "▸" : "▾";
+      });
+    }
+    document.querySelectorAll("[data-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const id = button.dataset.toggle;
+        if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+        updateRows();
+      });
+    });
+    updateRows();
+  </script>
+</body>
+</html>`;
+    downloadHtml(`muyang-task-map-interactive-${new Date().toISOString().slice(0, 10)}.html`, html);
+  };
+
   const timelinePopoverTask = timelinePopover ? tasks.find((task) => task.id === timelinePopover.taskId) : undefined;
   const timelinePopoverParent = timelinePopoverTask?.parentId ? tasks.find((task) => task.id === timelinePopoverTask.parentId) : undefined;
 
@@ -1104,9 +1300,6 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
               <div className="task-panel-title">
                 <span>{isEnglish ? "Mind Map / Logic" : "思维导图 / 逻辑关系"}</span>
                 <small className="task-shortcut-hint">{isEnglish ? "Arrows select · Enter sibling · Tab child · Delete remove" : "方向键选择 · Enter 同级 · Tab 子级 · Delete 删除"}</small>
-                <div className="task-map-range">
-                  <button type="button" onClick={resetProject}>{isEnglish ? "Reset" : "恢复示例"}</button>
-                </div>
               </div>
               <div className="mind-map-canvas" tabIndex={0} onKeyDown={handleMindMapKeyDown}>
                 <ReactFlow
@@ -1150,6 +1343,15 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 <span>{isEnglish ? "Selected Node" : "当前节点"}</span>
                 <button type="button" onClick={() => addChild()}>{isEnglish ? "Add" : "新增"}</button>
               </div>
+              <div className="task-root-setup">
+                <label>
+                  <span>{isEnglish ? "Root goal" : "总目标初始化"}</span>
+                  <input value={root.title} onChange={(event) => updateTask(root.id, { title: event.target.value })} placeholder={isEnglish ? "Rename the root goal" : "重命名最高父级总任务"} />
+                </label>
+                <button type="button" onClick={() => removeChildTasks(root.id)} disabled={!Boolean((childrenByParent.get(root.id) ?? []).length)}>
+                  {isEnglish ? "Clear root children" : "清空全部子节点"}
+                </button>
+              </div>
               <TaskTree
                 rows={visibleTasks}
                 selectedId={selected.id}
@@ -1168,6 +1370,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 onAiBreakdown={() => void createAiBreakdown()}
                 onSchedule={scheduleChildren}
                 onDelete={removeTask}
+                onDeleteChildren={() => removeChildTasks(selected.id)}
               />
             </aside>
           </section>
@@ -1178,26 +1381,15 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                 <span>{isEnglish ? "Timeline / Gantt" : "时间轴 / 甘特图"}</span>
                 <div className="task-map-range">
                   <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Todo PDF" : "清单 PDF"}</button>
-                  <button type="button" onClick={exportMindMapHtml}>{isEnglish ? "Mind HTML" : "思维 HTML"}</button>
-                  <button type="button" onClick={exportGanttHtml}>{isEnglish ? "Gantt HTML" : "甘特 HTML"}</button>
+                  <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Interactive HTML" : "交互 HTML"}</button>
                   <button type="button" onClick={() => { setViewStart(0); setViewLength(maxVisibleDays); }}>{isEnglish ? "Fit all" : "显示全部"}</button>
-                  <button type="button" onClick={resetProject}>{isEnglish ? "Reset" : "恢复示例"}</button>
                 </div>
               </div>
 
               <div className="task-overview">
                 <label>
                   <span>
-                    <b>{isEnglish ? "Start day" : "视图起点"}</b>
-                    <em>{formatDay(viewStart)}</em>
-                  </span>
-                  <div className="task-overview-control">
-                    <input type="range" min={0} max={Math.max(0, totalDays - viewLength)} value={viewStart} onChange={(event) => setViewStart(Number(event.target.value))} />
-                  </div>
-                </label>
-                <label>
-                  <span>
-                    <b>{isEnglish ? "Visible days" : "显示天数"}</b>
+                    <b>{isEnglish ? "Days per screen" : "每屏天数"}</b>
                     <em>{isEnglish ? `${viewLength} days` : `${viewLength} 天`}</em>
                   </span>
                   <div className="task-overview-control with-number">
@@ -1208,30 +1400,25 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
               </div>
 
               <div className="task-gantt-scroll" ref={chartRef} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
-                <div className="task-gantt-grid" style={{ width: timelineDays.length * timelineDayWidth + 260, minWidth: timelineDays.length * timelineDayWidth + 260 }}>
+                <div className="task-gantt-grid" style={{ width: timelineDays.length * timelineDayWidth, minWidth: timelineDays.length * timelineDayWidth }}>
                   <div className="task-gantt-dates">
-                    <span />
                     <div className="task-gantt-date-track" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, ${timelineDayWidth}px)` }}>
                       {timelineDays.map((day) => <b key={day}>{day % 7 === 0 ? formatDay(day) : ""}</b>)}
                     </div>
                   </div>
-                  {visibleTasks.map((task) => {
+                  {ganttRows.map((task) => {
                     const rowBars = visibleTasks
                       .filter((rowTask) => ganttLaneHostByTaskId.get(rowTask.id) === task.id)
                       .sort((a, b) => a.startDay - b.startDay || a.endDay - b.endDay);
                     const rowSelected = task.id === selected.id || rowBars.some((rowTask) => rowTask.id === selected.id);
                     return (
-                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: timelineDays.length * timelineDayWidth + 260 }}>
-                        <button className="task-gantt-label" type="button" style={{ paddingLeft: 12 + task.depth * 16 }} onClick={() => selectTask(task.id)}>
-                          <span>{task.title}</span>
-                          <small>{formatDay(task.startDay)} - {formatDay(task.endDay)}</small>
-                        </button>
+                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: timelineDays.length * timelineDayWidth }}>
                         <div className="task-gantt-track">
                           {task.dependsOn?.map((dependencyId) => <span className="task-dependency-dot" key={dependencyId} title={dependencyId} />)}
                           {rowBars.slice(1).map((rowTask, index) => {
                             const previousTask = rowBars[index];
-                            const linkStart = 260 + (previousTask.endDay + 1 - viewStart) * timelineDayWidth;
-                            const linkEnd = 260 + (rowTask.startDay - viewStart) * timelineDayWidth;
+                            const linkStart = (previousTask.endDay + 1 - viewStart) * timelineDayWidth;
+                            const linkEnd = (rowTask.startDay - viewStart) * timelineDayWidth;
                             const linkLeft = Math.min(linkStart, linkEnd);
                             const linkWidth = Math.abs(linkEnd - linkStart);
                             const linkClipped = previousTask.endDay < viewStart || rowTask.startDay > viewStart + viewLength || linkWidth < 10;
@@ -1252,7 +1439,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                             );
                           })}
                           {rowBars.map((rowTask) => {
-                            const left = 260 + (rowTask.startDay - viewStart) * timelineDayWidth;
+                            const left = (rowTask.startDay - viewStart) * timelineDayWidth;
                             const width = Math.max(18, (rowTask.endDay - rowTask.startDay + 1) * timelineDayWidth);
                             const clipped = rowTask.endDay < viewStart || rowTask.startDay > viewStart + viewLength;
                             if (clipped) return null;
@@ -1374,7 +1561,7 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
   );
 }
 
-function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren, onUpdate, onAiBreakdown, onSchedule, onDelete }: {
+function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren, onUpdate, onAiBreakdown, onSchedule, onDelete, onDeleteChildren }: {
   isEnglish: boolean;
   actionMode: TaskPhase extends infer _ ? "breakdown" | "schedule" : never;
   selected: TaskNode;
@@ -1385,6 +1572,7 @@ function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren
   onAiBreakdown: () => void;
   onSchedule: () => void;
   onDelete: (id: string) => void;
+  onDeleteChildren: () => void;
 }) {
   return (
     <div className="task-editor">
@@ -1402,6 +1590,7 @@ function TaskEditor({ isEnglish, actionMode, selected, root, isBusy, hasChildren
         ) : (
           <button type="button" onClick={onSchedule} disabled={isBusy || !hasChildren}>{isEnglish ? "AI schedule" : "AI 时间初排"}</button>
         )}
+        <button type="button" onClick={onDeleteChildren} disabled={!hasChildren}>{isEnglish ? "Clear children" : "清空子节点"}</button>
         <button type="button" onClick={() => onDelete(selected.id)} disabled={selected.id === root.id}>{isEnglish ? "Delete" : "删除"}</button>
       </div>
     </div>

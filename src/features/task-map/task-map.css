@@ -603,6 +603,62 @@
   border-top: 1px solid #26313a;
 }
 
+.task-root-setup {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #26313a;
+  background: rgba(123, 248, 156, .035);
+}
+
+.task-root-setup label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  color: #89a195;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.task-root-setup label span {
+  color: #7bf89c;
+  font: 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .08em;
+}
+
+.task-root-setup input {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  color: #edf4ef;
+  background: #0b1015;
+  border: 1px solid #2d3a43;
+  border-radius: 6px;
+  outline: 0;
+}
+
+.task-root-setup input:focus {
+  border-color: #7bf89c;
+  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .16);
+}
+
+.task-root-setup button {
+  justify-self: start;
+  padding: 8px 10px;
+  color: #07100a;
+  background: #7bf89c;
+  border: 1px solid #7bf89c;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.task-root-setup button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
 .task-editor label {
   display: grid;
   gap: 7px;
@@ -654,7 +710,7 @@
 
 .task-overview {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+  grid-template-columns: minmax(220px, 520px);
   gap: 18px;
   padding: 10px 14px;
   border-bottom: 1px solid #26313a;
@@ -747,7 +803,7 @@
 .task-gantt-dates,
 .task-gantt-row {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 1fr;
 }
 
 .task-gantt-dates {
@@ -780,6 +836,7 @@
   position: relative;
   min-height: 48px;
   border-bottom: 1px solid rgba(38, 49, 58, .72);
+  transition: transform .18s ease, opacity .18s ease, background .18s ease;
 }
 
 .task-gantt-row.selected {
@@ -911,27 +968,34 @@
   top: 50%;
   z-index: 3;
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 10px;
+  height: 10px;
   background: var(--task-bar-bg);
   border: 1px solid var(--task-bar-border);
   border-radius: 999px;
-  box-shadow: 0 0 0 3px rgba(11, 16, 21, .84), 0 0 18px var(--task-bar-shadow);
+  box-shadow: 0 0 0 2px rgba(11, 16, 21, .88), 0 0 14px var(--task-bar-shadow);
   cursor: ew-resize;
   touch-action: none;
   transform: translateY(-50%);
 }
 
+.task-bar-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+}
+
 .task-bar-handle.start {
-  left: -24px;
+  left: -16px;
 }
 
 .task-bar-handle.end {
-  right: -24px;
+  right: -16px;
 }
 
 .task-bar-handle:hover {
-  box-shadow: 0 0 0 4px rgba(11, 16, 21, .86), 0 0 24px var(--task-bar-shadow), 0 0 0 1px rgba(231, 255, 88, .48);
+  box-shadow: 0 0 0 3px rgba(11, 16, 21, .88), 0 0 20px var(--task-bar-shadow), 0 0 0 1px rgba(231, 255, 88, .48);
 }
 
 .task-lane-link {
