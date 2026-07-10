@@ -1611,14 +1611,22 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
     setEndInput(formatDay(task.endDay));
   }, [task.id, task.endDay]);
 
-  const changeStart = (value: number) => {
-    const nextStart = clamp(Math.round(value), minStart, task.endDay - minDuration);
-    onUpdate(task.id, { startDay: nextStart });
+  const changeStart = (value: number, options?: { expandEnd?: boolean }) => {
+    const rawStart = Math.max(minStart, Math.round(value));
+    const nextStart = options?.expandEnd ? rawStart : clamp(rawStart, minStart, task.endDay - minDuration);
+    const nextEnd = options?.expandEnd && nextStart > task.endDay - minDuration
+      ? nextStart + minDuration
+      : task.endDay;
+    onUpdate(task.id, { startDay: nextStart, endDay: nextEnd });
     return nextStart;
   };
-  const changeEnd = (value: number) => {
-    const nextEnd = clamp(Math.round(value), task.startDay + minDuration, maxEnd);
-    onUpdate(task.id, { endDay: nextEnd });
+  const changeEnd = (value: number, options?: { pullStart?: boolean }) => {
+    const rawEnd = Math.max(minStart + minDuration, Math.round(value));
+    const nextEnd = options?.pullStart ? rawEnd : clamp(rawEnd, task.startDay + minDuration, maxEnd);
+    const nextStart = options?.pullStart && nextEnd < task.startDay + minDuration
+      ? Math.max(minStart, nextEnd - minDuration)
+      : task.startDay;
+    onUpdate(task.id, { startDay: nextStart, endDay: nextEnd });
     return nextEnd;
   };
   const commitDateInput = (kind: "start" | "end") => {
@@ -1630,10 +1638,10 @@ function TimelineTaskPopover({ isEnglish, task, parent, root, x, y, hasChildren,
       return;
     }
     if (kind === "start") {
-      const nextStart = changeStart(parsedDay);
+      const nextStart = changeStart(parsedDay, { expandEnd: true });
       setStartInput(formatDay(nextStart));
     } else {
-      const nextEnd = changeEnd(parsedDay);
+      const nextEnd = changeEnd(parsedDay, { pullStart: true });
       setEndInput(formatDay(nextEnd));
     }
   };
