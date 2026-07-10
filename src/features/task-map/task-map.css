@@ -562,11 +562,67 @@
   white-space: nowrap;
 }
 
-.task-fullscreen-button.selected {
+.task-fullscreen-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.task-fullscreen-button.active {
   color: #07100a;
   background: #7bf89c;
   border-color: #7bf89c;
   box-shadow: 0 0 22px rgba(123, 248, 156, .22);
+}
+
+.task-fullscreen-icon {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.task-fullscreen-icon::before,
+.task-fullscreen-icon::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-color: currentColor;
+  opacity: .92;
+}
+
+.task-fullscreen-icon::before {
+  top: 0;
+  left: 0;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.task-fullscreen-icon::after {
+  right: 0;
+  bottom: 0;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.task-fullscreen-button.active .task-fullscreen-icon::before {
+  top: 2px;
+  left: 2px;
+  border-top: 0;
+  border-left: 0;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.task-fullscreen-button.active .task-fullscreen-icon::after {
+  right: 2px;
+  bottom: 2px;
+  border-right: 0;
+  border-bottom: 0;
+  border-top: 2px solid;
+  border-left: 2px solid;
 }
 
 .task-fullscreen-target:fullscreen {
