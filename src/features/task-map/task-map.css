@@ -569,7 +569,10 @@
   white-space: nowrap;
 }
 
-.task-fullscreen-button.active {
+.task-panel-title .task-fullscreen-button.active,
+.task-map-range .task-fullscreen-button.active,
+.task-panel-title .task-fullscreen-button.active:hover,
+.task-map-range .task-fullscreen-button.active:hover {
   color: #07100a;
   background: #7bf89c;
   border-color: #7bf89c;
