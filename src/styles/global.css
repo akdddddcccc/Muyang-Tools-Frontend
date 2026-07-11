@@ -1,4 +1,10 @@
-:root { font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; color: #edf4ef; background: #0b1015; font-synthesis: none; }
+:root {
+  --font-ui: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
+  font-family: var(--font-ui);
+  color: #edf4ef;
+  background: #0b1015;
+  font-synthesis: none;
+}
 * { box-sizing: border-box; }
 body { min-width: 320px; margin: 0; }
 button { font: inherit; }

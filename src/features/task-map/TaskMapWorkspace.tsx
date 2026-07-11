@@ -1129,7 +1129,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   <title>${escapeHtml(root.title)} - Todo PDF</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;padding:32px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    body{margin:0;padding:32px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid #101418}
     p.eyebrow{margin:0 0 8px;color:#16a05c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
     h1{margin:0;font-size:28px;line-height:1.2}
@@ -1191,7 +1191,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   <title>${escapeHtml(root.title)} - Mind Map</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{margin-bottom:24px;padding:18px 20px;border:1px solid #26313a;border-radius:8px;background:linear-gradient(110deg,rgba(123,248,156,.1),transparent 46%),#10171d}
     p{margin:0 0 8px;color:#7bf89c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
     h1{margin:0;font-size:28px;line-height:1.2}
@@ -1255,7 +1255,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   <title>${escapeHtml(root.title)} - Gantt</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{margin-bottom:24px;padding:18px 20px;border:1px solid #26313a;border-radius:8px;background:linear-gradient(110deg,rgba(123,248,156,.1),transparent 46%),#10171d}
     p{margin:0 0 8px;color:#7bf89c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
     h1{margin:0;font-size:28px;line-height:1.2}
@@ -1355,7 +1355,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   <title>${escapeHtml(root.title)} - Task Map</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    body{margin:0;min-height:100vh;padding:30px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:20px;padding:18px 20px;border:1px solid #26313a;border-radius:8px;background:linear-gradient(110deg,rgba(123,248,156,.1),transparent 46%),#10171d}
     p{margin:0 0 8px;color:#7bf89c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em}
     h1{margin:0;font-size:28px;line-height:1.2}
