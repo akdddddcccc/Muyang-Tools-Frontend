@@ -20,3 +20,14 @@ npm run dev
 ## 部署
 
 线上子页面的构建与切换步骤见 [docs/deploy-live-sticker.md](docs/deploy-live-sticker.md)。
+
+## Task Map Windows 版
+
+Windows 桌面版只保留“结构拆解”和“时间规划”两个工作区，支持打开、保存和双击关联 `.my` 可编辑工程文件，并可导出 PDF 清单与交互 HTML。
+
+```bash
+npm run desktop:start
+npm run desktop:pack:win
+```
+
+完整的工程格式、构建和发布流程见 [docs/task-map-windows.md](docs/task-map-windows.md)。

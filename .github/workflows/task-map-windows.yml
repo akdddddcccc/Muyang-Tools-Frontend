@@ -1,0 +1,34 @@
+name: Task Map Windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "task-map-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:pack:win
+        env:
+          TASK_MAP_CORE_API_BASE_URL: https://www.cmuyang23333.top/api
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MUYANG-Task-Map-Windows
+          path: release/*.exe
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/task-map-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/*.exe --title "MUYANG Task Map ${GITHUB_REF_NAME#task-map-v}" --generate-notes

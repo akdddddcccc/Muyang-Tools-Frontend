@@ -14,6 +14,7 @@ function workspaceFromLocation(): WorkspaceId {
 export function App() {
   const [language, setLanguage] = useState<"zh" | "en">("zh");
   const [workspace, setWorkspace] = useState<WorkspaceId>(workspaceFromLocation);
+  const desktopTaskMap = Boolean(window.taskMapDesktop) || import.meta.env.VITE_DESKTOP_TASK_MAP === "true";
 
   useEffect(() => {
     const syncWorkspace = () => setWorkspace(workspaceFromLocation());
@@ -26,6 +27,18 @@ export function App() {
     const nextPath = nextWorkspace === "task-map" ? "/task-map/" : nextWorkspace === "live-sticker" ? "/live-sticker/" : "/";
     if (window.location.pathname !== nextPath) window.history.pushState({}, "", nextPath);
   };
+
+  if (desktopTaskMap) {
+    return (
+      <TaskMapWorkspace
+        desktopMode
+        language={language}
+        onLanguageChange={setLanguage}
+        onOpenHome={() => undefined}
+        onOpenLiveSticker={() => undefined}
+      />
+    );
+  }
 
   if (workspace === "home") {
     return (

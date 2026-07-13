@@ -1,0 +1,28 @@
+appId: com.muyang.taskmap
+productName: MUYANG Task Map
+asar: true
+directories:
+  output: release
+files:
+  - dist-desktop/**/*
+  - desktop/**/*
+  - package.json
+win:
+  icon: build/task-map-icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: MUYANG-Task-Map-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MUYANG Task Map
+fileAssociations:
+  - ext: my
+    name: MUYANG Task Map Project
+    description: MUYANG Task Map editable project
+    role: Editor
+    iconIndex: 0

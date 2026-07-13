@@ -52,6 +52,26 @@ export interface BackgroundGenerationJob extends TypographyGenerationJob {
 
 const coreBaseUrl = (import.meta.env.VITE_CORE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
+async function requestCore<T>(path: string, init?: RequestInit): Promise<{ ok: boolean; status: number; payload: T }> {
+  if (window.taskMapDesktop) {
+    const result = await window.taskMapDesktop.requestCore({
+      path,
+      method: init?.method,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+    let payload: T;
+    try {
+      payload = JSON.parse(result.body) as T;
+    } catch {
+      payload = {} as T;
+    }
+    return { ok: result.status >= 200 && result.status < 300, status: result.status, payload };
+  }
+  const response = await fetch(`${coreBaseUrl}${path}`, init);
+  const payload = await response.json().catch(() => ({})) as T;
+  return { ok: response.ok, status: response.status, payload };
+}
+
 export function getCoreBaseUrl() {
   return coreBaseUrl;
 }
@@ -61,62 +81,61 @@ export async function fetchCoreHealth(signal?: AbortSignal): Promise<CoreHealth>
     throw new Error("VITE_CORE_API_BASE_URL is not configured.");
   }
 
-  const response = await fetch(`${coreBaseUrl}/health`, { signal });
+  const response = await requestCore<CoreHealth>("/health", { signal });
   if (!response.ok) {
     throw new Error(`Core returned ${response.status}.`);
   }
-
-  return response.json() as Promise<CoreHealth>;
+  return response.payload;
 }
 
 export async function createTypographyJob(input: TypographyGenerationInput): Promise<TypographyGenerationJob> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/jobs`, {
+  const response = await requestCore<TypographyGenerationJob & { message?: string }>("/v1/live-sticker/typography/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const payload = await response.json().catch(() => ({})) as TypographyGenerationJob & { message?: string };
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
 }
 
 export async function fetchTypographyJob(id: string): Promise<TypographyGenerationJob> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/jobs/${id}`);
-  const payload = await response.json().catch(() => ({})) as TypographyGenerationJob & { message?: string };
+  const response = await requestCore<TypographyGenerationJob & { message?: string }>(`/v1/live-sticker/typography/jobs/${id}`);
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
 }
 
 export async function cutoutTypography(image: ImageReferenceInput): Promise<{ matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]> }> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/typography/cutout`, {
+  const response = await requestCore<{ matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]>; message?: string }>("/v1/live-sticker/typography/cutout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ image }),
   });
-  const payload = await response.json().catch(() => ({})) as { matte: "white" | "black"; result: NonNullable<TypographyGenerationJob["result"]>; message?: string };
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
   return payload;
 }
 
 export async function createBackgroundJob(input: { kind: BackgroundKind; prompt?: string; reference?: ImageReferenceInput }): Promise<BackgroundGenerationJob> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/background/jobs`, {
+  const response = await requestCore<BackgroundGenerationJob & { message?: string }>("/v1/live-sticker/background/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const payload = await response.json().catch(() => ({})) as BackgroundGenerationJob & { message?: string };
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
 }
 
 export async function fetchBackgroundJob(id: string): Promise<BackgroundGenerationJob> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/live-sticker/background/jobs/${id}`);
-  const payload = await response.json().catch(() => ({})) as BackgroundGenerationJob & { message?: string };
+  const response = await requestCore<BackgroundGenerationJob & { message?: string }>(`/v1/live-sticker/background/jobs/${id}`);
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.error?.message || payload.message || `Core returned ${response.status}.`);
   return payload;
 }
@@ -157,24 +176,24 @@ export interface TaskMapScheduleItem {
 
 export async function createTaskBreakdown(input: TaskMapBreakdownInput): Promise<{ items: TaskMapBreakdownItem[]; provider: string }> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/task-map/breakdown`, {
+  const response = await requestCore<{ items?: TaskMapBreakdownItem[]; provider?: string; message?: string }>("/v1/task-map/breakdown", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const payload = await response.json().catch(() => ({})) as { items?: TaskMapBreakdownItem[]; provider?: string; message?: string };
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
   return { items: payload.items ?? [], provider: payload.provider ?? "unknown" };
 }
 
 export async function createTaskSchedule(input: TaskMapScheduleInput): Promise<{ items: TaskMapScheduleItem[]; provider: string }> {
   if (!coreBaseUrl) throw new Error("VITE_CORE_API_BASE_URL is not configured.");
-  const response = await fetch(`${coreBaseUrl}/v1/task-map/schedule`, {
+  const response = await requestCore<{ items?: TaskMapScheduleItem[]; provider?: string; message?: string }>("/v1/task-map/schedule", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  const payload = await response.json().catch(() => ({})) as { items?: TaskMapScheduleItem[]; provider?: string; message?: string };
+  const payload = response.payload;
   if (!response.ok) throw new Error(payload.message || `Core returned ${response.status}.`);
   return { items: payload.items ?? [], provider: payload.provider ?? "unknown" };
 }

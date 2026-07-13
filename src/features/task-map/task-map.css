@@ -35,6 +35,7 @@
 }
 
 .task-map-header-actions,
+.task-desktop-file-actions,
 .task-map-range,
 .task-export-actions,
 .task-editor-actions {
@@ -44,6 +45,7 @@
 }
 
 .task-map-header-actions > button,
+.task-desktop-file-actions button,
 .task-map-range button,
 .task-export-actions button,
 .task-editor-actions button,
@@ -59,6 +61,7 @@
 }
 
 .task-map-header-actions > button:hover,
+.task-desktop-file-actions button:hover,
 .task-map-range button:hover,
 .task-export-actions button:hover,
 .task-editor-actions button:hover,
@@ -66,6 +69,28 @@
 .task-fit-all-button:hover {
   border-color: #7bf89c;
   color: #7bf89c;
+}
+
+.task-windows-download {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid #2d3a43;
+  border-radius: 5px;
+  color: #cfe2d6;
+  background: #111a21;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.task-windows-download:hover {
+  border-color: #7bf89c;
+  color: #7bf89c;
+  background: rgba(123, 248, 156, .08);
 }
 
 .task-editor-actions button:disabled {
@@ -91,6 +116,39 @@
 .task-language-switcher button.selected {
   color: #07100a;
   background: #7bf89c;
+}
+
+.task-desktop-project-name {
+  max-width: 260px;
+  overflow: hidden;
+  color: #9aafa4;
+  font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-desktop-project-name::first-letter {
+  color: #7bf89c;
+}
+
+.task-desktop-file-actions {
+  padding-left: 8px;
+  border-left: 1px solid #26313a;
+}
+
+.task-map-shell--desktop .task-map-main {
+  padding-top: 12px;
+}
+
+.task-desktop-status {
+  min-height: 28px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  color: #9aafa4;
+  background: #10171d;
+  border: 1px solid #26313a;
+  border-radius: 5px;
+  font-size: 11px;
 }
 
 .task-map-main {

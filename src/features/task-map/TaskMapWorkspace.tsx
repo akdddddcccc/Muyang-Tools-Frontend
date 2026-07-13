@@ -2,21 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProper
 import { Background, Controls, Handle, Position, ReactFlow, SelectionMode, applyNodeChanges, type Edge, type EdgeProps, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { createTaskBreakdown, createTaskSchedule, type TaskMapBreakdownItem, type TaskMapScheduleItem } from "../../lib/core-api";
+import { createTaskMapProjectDocument, parseTaskMapProjectDocument, projectStateSnapshot, type TaskMapPhase as TaskPhase, type TaskMapProjectState, type TaskMapTask as TaskNode } from "./project-file";
 import "./task-map.css";
 
 type Language = "zh" | "en";
-
-interface TaskNode {
-  id: string;
-  parentId?: string;
-  title: string;
-  note?: string;
-  startDay: number;
-  endDay: number;
-  lane: number;
-  collapsed?: boolean;
-  dependsOn?: string[];
-}
 
 type DragState = {
   id: string;
@@ -30,7 +19,6 @@ type DragState = {
   changed: boolean;
 };
 
-type TaskPhase = "structure" | "timeline";
 type FullscreenPanel = TaskPhase | null;
 
 type MindNodeData = {
@@ -449,7 +437,7 @@ function MindBezierEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps<
 const mindNodeTypes = { mindTask: MindMapNode };
 const mindEdgeTypes = { mindBezier: MindBezierEdge };
 
-export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpenLiveSticker }: { language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void; onOpenLiveSticker: () => void }) {
+export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChange, onOpenHome, onOpenLiveSticker }: { desktopMode?: boolean; language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void; onOpenLiveSticker: () => void }) {
   const isEnglish = language === "en";
   const [tasks, setTasks] = useState<TaskNode[]>(loadInitialTasks);
   const [selectedId, setSelectedId] = useState("goal");
@@ -467,6 +455,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const [rootStartInput, setRootStartInput] = useState("");
   const [rootEndInput, setRootEndInput] = useState("");
   const [fullscreenPanel, setFullscreenPanel] = useState<FullscreenPanel>(null);
+  const [projectPath, setProjectPath] = useState<string>();
+  const [projectCreatedAt, setProjectCreatedAt] = useState(() => new Date().toISOString());
+  const [savedProjectState, setSavedProjectState] = useState<string | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const mindPanelRef = useRef<HTMLElement | null>(null);
   const mindCanvasRef = useRef<HTMLDivElement | null>(null);
@@ -486,6 +477,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const root = tasks.find((task) => !task.parentId) ?? tasks[0];
   const selected = tasks.find((task) => task.id === selectedId) ?? root;
   latestTasksRef.current = tasks;
+  const currentProjectState = useMemo<TaskMapProjectState>(() => ({
+    tasks,
+    nodePositions,
+    view: { phase, selectedId, viewStart, viewLength },
+  }), [nodePositions, phase, selectedId, tasks, viewLength, viewStart]);
+  const currentProjectSnapshot = useMemo(() => projectStateSnapshot(currentProjectState), [currentProjectState]);
+  const projectDirty = desktopMode && savedProjectState !== null && savedProjectState !== currentProjectSnapshot;
   const childrenByParent = useMemo(() => {
     const map = new Map<string, TaskNode[]>();
     tasks.forEach((task) => {
@@ -623,6 +621,123 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     setTasks(normalizedTasks);
     window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
   };
+
+  const applyDesktopProject = useCallback((result: TaskMapDesktopFileResult) => {
+    if (result.canceled || !result.content) return;
+    try {
+      const project = parseTaskMapProjectDocument(result.content);
+      const state: TaskMapProjectState = {
+        tasks: project.tasks,
+        nodePositions: project.nodePositions,
+        view: project.view,
+      };
+      setTasks(project.tasks);
+      setNodePositions(project.nodePositions);
+      setSelectedId(project.view.selectedId);
+      setSelectedNodeIds([project.view.selectedId]);
+      setPhase(project.view.phase);
+      setViewStart(project.view.viewStart);
+      setViewLength(project.view.viewLength);
+      setProjectPath(result.path);
+      setProjectCreatedAt(project.createdAt);
+      setSavedProjectState(projectStateSnapshot(state));
+      window.localStorage.setItem(storageKey, JSON.stringify(project.tasks));
+      setMessage(isEnglish ? "Project opened." : "项目已打开。");
+      window.requestAnimationFrame(() => mindFlowRef.current?.fitView({ padding: 0.18, duration: 420 }));
+    } catch {
+      setMessage(isEnglish ? "This .my project is invalid or unsupported." : "这个 .my 项目无效或版本不受支持。");
+    }
+  }, [isEnglish]);
+
+  const saveDesktopProject = useCallback(async (saveAs = false) => {
+    if (!window.taskMapDesktop) return false;
+    const document = createTaskMapProjectDocument(currentProjectState, projectCreatedAt);
+    const rootTask = document.tasks.find((task) => !task.parentId);
+    const safeTitle = (rootTask?.title || (isEnglish ? "Untitled plan" : "未命名计划")).replace(/[\\/:*?"<>|]/g, "-");
+    const result = await window.taskMapDesktop.saveProject({
+      path: projectPath,
+      content: JSON.stringify(document, null, 2),
+      saveAs,
+      suggestedName: `${safeTitle}.my`,
+    });
+    if (result.canceled) return false;
+    setProjectPath(result.path);
+    setSavedProjectState(currentProjectSnapshot);
+    setMessage(isEnglish ? "Project saved." : "项目已保存。");
+    return true;
+  }, [currentProjectSnapshot, currentProjectState, isEnglish, projectCreatedAt, projectPath]);
+
+  const openDesktopProject = useCallback(async () => {
+    if (!window.taskMapDesktop) return;
+    if (projectDirty && !window.confirm(isEnglish ? "Discard unsaved changes and open another project?" : "要放弃未保存的更改并打开其他项目吗？")) return;
+    applyDesktopProject(await window.taskMapDesktop.openProject());
+  }, [applyDesktopProject, isEnglish, projectDirty]);
+
+  const newDesktopProject = useCallback(() => {
+    if (projectDirty && !window.confirm(isEnglish ? "Discard unsaved changes and create a new project?" : "要放弃未保存的更改并新建项目吗？")) return;
+    const nextTasks: TaskNode[] = [{
+      id: createId("goal"),
+      title: isEnglish ? "To rename" : "待重命名",
+      note: isEnglish ? "Define the single overall goal." : "请先定义唯一的总目标。",
+      startDay: 0,
+      endDay: 29,
+      lane: 0,
+    }];
+    const nextState: TaskMapProjectState = {
+      tasks: nextTasks,
+      nodePositions: {},
+      view: { phase: "structure", selectedId: nextTasks[0].id, viewStart: 0, viewLength: 30 },
+    };
+    setTasks(nextTasks);
+    setNodePositions({});
+    setSelectedId(nextTasks[0].id);
+    setSelectedNodeIds([nextTasks[0].id]);
+    setPhase("structure");
+    setViewStart(0);
+    setViewLength(30);
+    setProjectPath(undefined);
+    setProjectCreatedAt(new Date().toISOString());
+    setSavedProjectState("");
+    window.localStorage.setItem(storageKey, JSON.stringify(nextTasks));
+    setMessage(isEnglish ? "New project created. Rename the root goal." : "新项目已建立，请先重命名总目标。");
+  }, [isEnglish, projectDirty]);
+
+  useEffect(() => {
+    if (!desktopMode || !window.taskMapDesktop) return;
+    if (savedProjectState === null) setSavedProjectState(currentProjectSnapshot);
+    void window.taskMapDesktop.getLaunchProject().then(applyDesktopProject);
+    return window.taskMapDesktop.onProjectOpened(applyDesktopProject);
+  }, [applyDesktopProject, desktopMode]);
+
+  useEffect(() => {
+    if (!desktopMode) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        void saveDesktopProject(event.shiftKey);
+      } else if (key === "o") {
+        event.preventDefault();
+        void openDesktopProject();
+      } else if (key === "n") {
+        event.preventDefault();
+        newDesktopProject();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [desktopMode, newDesktopProject, openDesktopProject, saveDesktopProject]);
+
+  useEffect(() => {
+    if (!desktopMode || !projectDirty) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [desktopMode, projectDirty]);
 
   const arrangeMindTree = (nextTasks: TaskNode[], focusId?: string) => {
     const nextRoot = nextTasks.find((task) => !task.parentId) ?? nextTasks[0];
@@ -1146,6 +1261,16 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, []);
 
   const downloadHtml = (filename: string, html: string) => {
+    if (desktopMode && window.taskMapDesktop) {
+      void window.taskMapDesktop.exportFile({
+        content: html,
+        suggestedName: filename,
+        filters: [{ name: "HTML", extensions: ["html"] }],
+      }).then((result) => {
+        if (!result.canceled) setMessage(isEnglish ? "HTML exported." : "HTML 已导出。");
+      });
+      return;
+    }
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1201,17 +1326,24 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     <h1>${escapeHtml(root.title)}</h1>
   </header>
   <ol>${renderTodoItems(root)}</ol>
-  <script>
-    window.addEventListener("load", () => setTimeout(() => window.print(), 180));
-  </script>
 </body>
 </html>`;
+    if (desktopMode && window.taskMapDesktop) {
+      void window.taskMapDesktop.exportPdf({
+        html,
+        suggestedName: `muyang-task-map-todo-${new Date().toISOString().slice(0, 10)}.pdf`,
+      }).then((result) => {
+        if (!result.canceled) setMessage(isEnglish ? "PDF exported." : "PDF 已导出。");
+      });
+      return;
+    }
     const printWindow = window.open("", "_blank", "noopener,noreferrer");
     if (!printWindow) {
       downloadHtml(`muyang-task-map-todo-${new Date().toISOString().slice(0, 10)}.html`, html);
       setMessage(isEnglish ? "Popup blocked. Downloaded a printable todo HTML instead." : "浏览器拦截了打印窗口，已改为下载可打印清单 HTML。");
       return;
     }
+    printWindow.addEventListener("load", () => setTimeout(() => printWindow.print(), 180), { once: true });
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
@@ -1518,17 +1650,35 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
 
   const timelinePopoverTask = timelinePopover ? tasks.find((task) => task.id === timelinePopover.taskId) : undefined;
   const timelinePopoverParent = timelinePopoverTask?.parentId ? tasks.find((task) => task.id === timelinePopoverTask.parentId) : undefined;
+  const desktopProjectName = projectPath?.split(/[\\/]/).pop() ?? (isEnglish ? "Untitled plan.my" : "未命名计划.my");
 
   return (
-    <div className="task-map-shell">
+    <div className={`task-map-shell${desktopMode ? " task-map-shell--desktop" : ""}`}>
       <header className="task-map-header">
         <div>
           <p>MUYANG TASK MAP</p>
           <h1>{isEnglish ? "AI Task Gantt Studio" : "AI 任务甘特图工作台"}</h1>
         </div>
         <div className="task-map-header-actions">
-          <button type="button" onClick={onOpenHome}>{isEnglish ? "Toolkit" : "工具主页"}</button>
-          <button type="button" onClick={onOpenLiveSticker}>{isEnglish ? "Live Sticker" : "直播贴片"}</button>
+          {desktopMode ? (
+            <>
+              <span className="task-desktop-project-name" title={projectPath}>{projectDirty ? "● " : ""}{desktopProjectName}</span>
+              <div className="task-desktop-file-actions">
+                <button type="button" onClick={newDesktopProject}>{isEnglish ? "New" : "新建"}</button>
+                <button type="button" onClick={() => void openDesktopProject()}>{isEnglish ? "Open" : "打开"}</button>
+                <button type="button" onClick={() => void saveDesktopProject(false)}>{isEnglish ? "Save" : "保存"}</button>
+                <button type="button" onClick={() => void saveDesktopProject(true)}>{isEnglish ? "Save as" : "另存为"}</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onOpenHome}>{isEnglish ? "Toolkit" : "工具主页"}</button>
+              <button type="button" onClick={onOpenLiveSticker}>{isEnglish ? "Live Sticker" : "直播贴片"}</button>
+              <a className="task-windows-download" href="https://github.com/akdddddcccc/Muyang-Tools-Frontend/releases/latest" target="_blank" rel="noreferrer">
+                {isEnglish ? "Windows app" : "Windows 版"}
+              </a>
+            </>
+          )}
           <div className="task-language-switcher" role="group" aria-label="language">
             <button className={language === "zh" ? "selected" : ""} type="button" onClick={() => onLanguageChange("zh")}>中</button>
             <button className={language === "en" ? "selected" : ""} type="button" onClick={() => onLanguageChange("en")}>EN</button>
@@ -1537,11 +1687,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
       </header>
 
       <main className="task-map-main">
-        <section className="task-map-hero">
-          <p>01 / STRUCTURE FIRST</p>
-          <h2>{isEnglish ? "One goal, infinite decomposition, then time planning." : "一个总目标，无限拆解，再进入时间规划。"}</h2>
-          <span>{message}</span>
-        </section>
+        {desktopMode ? <div className="task-desktop-status" role="status">{message}</div> : (
+          <section className="task-map-hero">
+            <p>01 / STRUCTURE FIRST</p>
+            <h2>{isEnglish ? "One goal, infinite decomposition, then time planning." : "一个总目标，无限拆解，再进入时间规划。"}</h2>
+            <span>{message}</span>
+          </section>
+        )}
 
         <div className="task-phase-toolbar">
           <nav className="task-phase-switch" aria-label={isEnglish ? "Task map phase" : "任务规划阶段"}>
