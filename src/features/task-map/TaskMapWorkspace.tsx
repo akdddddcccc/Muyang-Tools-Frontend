@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Background, Controls, Handle, Position, ReactFlow, SelectionMode, applyNodeChanges, type Edge, type EdgeProps, type Node, type NodeChange, type NodeProps } from "@xyflow/react";
+import { Background, Controls, Handle, Position, ReactFlow, SelectionMode, applyNodeChanges, type Edge, type EdgeProps, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { createTaskBreakdown, createTaskSchedule, type TaskMapBreakdownItem, type TaskMapScheduleItem } from "../../lib/core-api";
 import "./task-map.css";
@@ -42,6 +42,7 @@ type MindNodeData = {
   root: boolean;
   onSelect: (id: string) => void;
   onRename: (id: string, title: string) => void;
+  onRenameComplete: (id: string) => void;
   onAddChild: (id: string) => void;
   onAiBreakdown: (id: string) => void;
   onToggle: (id: string) => void;
@@ -247,17 +248,32 @@ function collectVisibleTaskRows(root: TaskNode | undefined, childrenByParent: Ma
   return rows;
 }
 
-function createStandardMindLayout(rows: Array<TaskNode & { depth: number }>) {
-  const depthCounts = new Map<number, number>();
+function createTreeMindLayout(rows: Array<TaskNode & { depth: number }>) {
+  const rowGap = 112;
+  const columnGap = 300;
   const positions: Record<string, { x: number; y: number }> = {};
+  const visibleIds = new Set(rows.map((task) => task.id));
+  const childrenByParent = new Map<string, Array<TaskNode & { depth: number }>>();
   rows.forEach((task) => {
-    const count = depthCounts.get(task.depth) ?? 0;
-    depthCounts.set(task.depth, count + 1);
-    positions[task.id] = {
-      x: task.depth * 340,
-      y: count * 112,
-    };
+    if (!task.parentId || !visibleIds.has(task.parentId)) return;
+    const children = childrenByParent.get(task.parentId) ?? [];
+    children.push(task);
+    childrenByParent.set(task.parentId, children);
   });
+  let leafIndex = 0;
+  const placeSubtree = (task: TaskNode & { depth: number }): number => {
+    const children = childrenByParent.get(task.id) ?? [];
+    const childYPositions = children.map(placeSubtree);
+    const y = childYPositions.length
+      ? (childYPositions[0] + childYPositions[childYPositions.length - 1]) / 2
+      : leafIndex++ * rowGap;
+    positions[task.id] = {
+      x: task.depth * columnGap,
+      y,
+    };
+    return y;
+  };
+  if (rows[0]) placeSubtree(rows[0]);
   return positions;
 }
 
@@ -382,6 +398,7 @@ const MindMapNode = memo(function MindMapNode({ data }: NodeProps<Node<MindNodeD
             if (event.key === "Enter") {
               event.preventDefault();
               event.currentTarget.blur();
+              data.onRenameComplete(data.task.id);
             }
           }}
         />
@@ -451,6 +468,8 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   const [fullscreenPanel, setFullscreenPanel] = useState<FullscreenPanel>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
   const mindPanelRef = useRef<HTMLElement | null>(null);
+  const mindCanvasRef = useRef<HTMLDivElement | null>(null);
+  const mindFlowRef = useRef<ReactFlowInstance<Node<MindNodeData>, Edge> | null>(null);
   const ganttPanelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const dragHoldTimerRef = useRef<number | null>(null);
@@ -609,6 +628,11 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     setSelectedNodeIds([id]);
   }, []);
 
+  const finishNodeRename = useCallback((id: string) => {
+    selectTask(id);
+    window.requestAnimationFrame(() => mindCanvasRef.current?.focus({ preventScroll: true }));
+  }, [selectTask]);
+
   const updateTask = (id: string, patch: Partial<TaskNode>) => {
     persist(tasks.map((task) => task.id === id ? { ...task, ...patch } : task));
   };
@@ -663,13 +687,23 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     };
     persist([...tasks, next]);
     if (options?.select ?? true) selectTask(next.id);
+    const parentPosition = mindFlowNodes.find((node) => node.id === parent.id)?.position ?? nodePositions[parent.id] ?? {
+      x: taskDepth(parent, tasks) * 300,
+      y: Math.max(0, visibleTasks.findIndex((task) => task.id === parent.id)) * 112,
+    };
+    const siblingBottom = children.reduce((bottom, child) => {
+      const position = mindFlowNodes.find((node) => node.id === child.id)?.position ?? nodePositions[child.id];
+      return position ? Math.max(bottom, position.y) : bottom;
+    }, parentPosition.y - 112);
+    const nextPosition = {
+      x: parentPosition.x + 300,
+      y: children.length ? siblingBottom + 112 : parentPosition.y,
+    };
     setNodePositions((positions) => ({
       ...positions,
-      [next.id]: positions[next.id] ?? {
-        x: (taskDepth(parent, tasks) + 1) * 310,
-        y: (visibleTasks.findIndex((task) => task.id === parent.id) + Math.max(1, children.length + 1)) * 96,
-      },
+      [next.id]: positions[next.id] ?? nextPosition,
     }));
+    window.requestAnimationFrame(() => mindFlowRef.current?.setCenter(nextPosition.x + 116, nextPosition.y + 44, { duration: 360, zoom: 0.9 }));
     return next;
   };
 
@@ -1048,6 +1082,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
             root: task.id === root.id,
             onSelect: selectTask,
             onRename: (id, title) => updateTask(id, { title }),
+            onRenameComplete: finishNodeRename,
             onAddChild: addChildById,
             onAiBreakdown: createAiBreakdownById,
             onToggle: toggleTaskById,
@@ -1056,7 +1091,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
         };
       });
     });
-  }, [visibleTasks, nodePositions, childrenByParent, selectedNodeIds, isBusy, root.id, selectTask, addChildById, createAiBreakdownById, toggleTaskById]);
+  }, [visibleTasks, nodePositions, childrenByParent, selectedNodeIds, isBusy, root.id, selectTask, finishNodeRename, addChildById, createAiBreakdownById, toggleTaskById]);
 
   const handleMindNodesChange = useCallback((changes: NodeChange<Node<MindNodeData>>[]) => {
     setMindFlowNodes((nodes) => applyNodeChanges(changes, nodes));
@@ -1081,14 +1116,15 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
   }, []);
 
   const formatMindLayout = useCallback(() => {
-    const nextPositions = createStandardMindLayout(visibleTasks);
+    const nextPositions = createTreeMindLayout(visibleTasks);
     setNodePositions(nextPositions);
     setMindFlowNodes((nodes) => nodes.map((node) => ({
       ...node,
       position: nextPositions[node.id] ?? node.position,
     })));
     setMindContextMenu(null);
-    setMessage(isEnglish ? "Mind map layout formatted." : "思维导图已一键格式化。");
+    setMessage(isEnglish ? "Mind map formatted around subtree centers." : "思维导图已按子树中心格式化。");
+    window.requestAnimationFrame(() => mindFlowRef.current?.fitView({ padding: 0.18, duration: 480 }));
   }, [visibleTasks, isEnglish]);
 
   const openMindContextMenu = useCallback((event: MouseEvent | React.MouseEvent<Element, MouseEvent>) => {
@@ -1529,7 +1565,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                   </button>
                 </div>
               </div>
-              <div className="mind-map-canvas" tabIndex={0} onKeyDown={handleMindMapKeyDown}>
+              <div className="mind-map-canvas" ref={mindCanvasRef} tabIndex={0} onKeyDown={handleMindMapKeyDown}>
                 <ReactFlow
                   nodes={mindFlowNodes}
                   edges={mindEdges}
@@ -1537,6 +1573,7 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
                   edgeTypes={mindEdgeTypes}
                   fitView
                   fitViewOptions={{ padding: 0.22 }}
+                  onInit={(instance) => { mindFlowRef.current = instance; }}
                   minZoom={0.28}
                   maxZoom={1.35}
                   nodesDraggable
