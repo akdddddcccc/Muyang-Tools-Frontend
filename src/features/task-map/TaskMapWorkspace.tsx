@@ -813,7 +813,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     try {
       const result = await createTaskSchedule({
         parent: { ...taskInput(target), startDay: target.startDay, endDay: target.endDay },
-        children: children.map((child) => ({ ...taskInput(child), startDay: child.startDay, endDay: child.endDay, lane: child.lane })),
+        // AI initial scheduling is a fresh semantic plan. Existing dates and
+        // lanes stay out of the prompt until explicit task locking exists.
+        children: children.map(taskInput),
         locale: language,
       });
       applySchedule(result.items.length ? result.items : distributeSchedule(target, children), result.provider, target);
@@ -827,10 +829,11 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
 
   const applySchedule = (items: TaskMapScheduleItem[], provider: string, parent = selected) => {
     const byId = new Map(items.map((item) => [item.id, item]));
-    persist(tasks.map((task) => {
+    let changedCount = 0;
+    const nextTasks = tasks.map((task) => {
       const item = byId.get(task.id);
       if (!item) return task;
-      return {
+      const nextTask = {
         ...task,
         startDay: clamp(Math.round(item.startDay), parent.startDay, parent.endDay - minDuration),
         endDay: clamp(Math.round(item.endDay), Math.round(item.startDay) + minDuration, parent.endDay),
@@ -838,8 +841,13 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
         dependsOn: item.dependsOn?.filter((id) => id !== task.id),
         note: item.note || task.note,
       };
-    }));
-    setMessage(isEnglish ? `Schedule updated via ${provider}.` : `已通过 ${provider} 初排时间。`);
+      if (nextTask.startDay !== task.startDay || nextTask.endDay !== task.endDay || nextTask.lane !== task.lane || JSON.stringify(nextTask.dependsOn ?? []) !== JSON.stringify(task.dependsOn ?? [])) changedCount += 1;
+      return nextTask;
+    });
+    persist(nextTasks);
+    setMessage(isEnglish
+      ? `Schedule updated via ${provider}: ${changedCount} of ${byId.size} subtasks changed.`
+      : `已通过 ${provider} 初排时间：${byId.size} 个子任务中有 ${changedCount} 个发生变化。`);
   };
 
   const openTimelinePopover = (event: React.MouseEvent | React.KeyboardEvent, task: TaskNode) => {
