@@ -248,9 +248,10 @@ function collectVisibleTaskRows(root: TaskNode | undefined, childrenByParent: Ma
   return rows;
 }
 
+const MIND_ROW_GAP = 112;
+const MIND_COLUMN_GAP = 420;
+
 function createTreeMindLayout(rows: Array<TaskNode & { depth: number }>) {
-  const rowGap = 112;
-  const columnGap = 300;
   const positions: Record<string, { x: number; y: number }> = {};
   const visibleIds = new Set(rows.map((task) => task.id));
   const childrenByParent = new Map<string, Array<TaskNode & { depth: number }>>();
@@ -266,9 +267,9 @@ function createTreeMindLayout(rows: Array<TaskNode & { depth: number }>) {
     const childYPositions = children.map(placeSubtree);
     const y = childYPositions.length
       ? (childYPositions[0] + childYPositions[childYPositions.length - 1]) / 2
-      : leafIndex++ * rowGap;
+      : leafIndex++ * MIND_ROW_GAP;
     positions[task.id] = {
-      x: task.depth * columnGap,
+      x: task.depth * MIND_COLUMN_GAP,
       y,
     };
     return y;
@@ -688,16 +689,16 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     persist([...tasks, next]);
     if (options?.select ?? true) selectTask(next.id);
     const parentPosition = mindFlowNodes.find((node) => node.id === parent.id)?.position ?? nodePositions[parent.id] ?? {
-      x: taskDepth(parent, tasks) * 300,
-      y: Math.max(0, visibleTasks.findIndex((task) => task.id === parent.id)) * 112,
+      x: taskDepth(parent, tasks) * MIND_COLUMN_GAP,
+      y: Math.max(0, visibleTasks.findIndex((task) => task.id === parent.id)) * MIND_ROW_GAP,
     };
     const siblingBottom = children.reduce((bottom, child) => {
       const position = mindFlowNodes.find((node) => node.id === child.id)?.position ?? nodePositions[child.id];
       return position ? Math.max(bottom, position.y) : bottom;
-    }, parentPosition.y - 112);
+    }, parentPosition.y - MIND_ROW_GAP);
     const nextPosition = {
-      x: parentPosition.x + 300,
-      y: children.length ? siblingBottom + 112 : parentPosition.y,
+      x: parentPosition.x + MIND_COLUMN_GAP,
+      y: children.length ? siblingBottom + MIND_ROW_GAP : parentPosition.y,
     };
     setNodePositions((positions) => ({
       ...positions,
