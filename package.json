@@ -12,7 +12,7 @@
     "build:live-sticker": "rm -rf dist && VITE_DEPLOY_BASE=/live-sticker/ VITE_BUILD_OUT_DIR=dist/live-sticker npm run build && node scripts/create-task-map-entry.mjs",
     "build:task-map-desktop": "cross-env VITE_DEPLOY_BASE=./ VITE_BUILD_OUT_DIR=dist-desktop VITE_DESKTOP_TASK_MAP=true npm run build",
     "desktop:start": "npm run build:task-map-desktop && electron .",
-    "desktop:pack:win": "npm run build:task-map-desktop && electron-builder --win nsis",
+    "desktop:pack:win": "npm run build:task-map-desktop && electron-builder --win nsis --publish never",
     "preview": "vite preview"
   },
   "dependencies": {
