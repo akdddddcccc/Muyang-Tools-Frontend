@@ -624,6 +624,33 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
     window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
   };
 
+  const arrangeMindTree = (nextTasks: TaskNode[], focusId?: string) => {
+    const nextRoot = nextTasks.find((task) => !task.parentId) ?? nextTasks[0];
+    if (!nextRoot) return;
+    const nextChildrenByParent = new Map<string, TaskNode[]>();
+    nextTasks.forEach((task) => {
+      if (!task.parentId) return;
+      const children = nextChildrenByParent.get(task.parentId) ?? [];
+      children.push(task);
+      nextChildrenByParent.set(task.parentId, children);
+    });
+    const nextVisibleTasks = collectVisibleTaskRows(nextRoot, nextChildrenByParent);
+    const nextPositions = createTreeMindLayout(nextVisibleTasks);
+    setNodePositions(nextPositions);
+    setMindFlowNodes((nodes) => nodes.map((node) => ({
+      ...node,
+      position: nextPositions[node.id] ?? node.position,
+    })));
+    window.requestAnimationFrame(() => {
+      const focusPosition = focusId ? nextPositions[focusId] : undefined;
+      if (focusPosition) {
+        void mindFlowRef.current?.setCenter(focusPosition.x + 116, focusPosition.y + 44, { duration: 420, zoom: 0.9 });
+      } else {
+        void mindFlowRef.current?.fitView({ padding: 0.18, duration: 480 });
+      }
+    });
+  };
+
   const selectTask = useCallback((id: string) => {
     setSelectedId(id);
     setSelectedNodeIds([id]);
@@ -686,25 +713,10 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
       endDay: clamp(startDay + 12, startDay + minDuration, parent.endDay),
       lane: children.length,
     };
-    persist([...tasks, next]);
+    const nextTasks = [...tasks.map((task) => task.id === parent.id ? { ...task, collapsed: false } : task), next];
+    persist(nextTasks);
     if (options?.select ?? true) selectTask(next.id);
-    const parentPosition = mindFlowNodes.find((node) => node.id === parent.id)?.position ?? nodePositions[parent.id] ?? {
-      x: taskDepth(parent, tasks) * MIND_COLUMN_GAP,
-      y: Math.max(0, visibleTasks.findIndex((task) => task.id === parent.id)) * MIND_ROW_GAP,
-    };
-    const siblingBottom = children.reduce((bottom, child) => {
-      const position = mindFlowNodes.find((node) => node.id === child.id)?.position ?? nodePositions[child.id];
-      return position ? Math.max(bottom, position.y) : bottom;
-    }, parentPosition.y - MIND_ROW_GAP);
-    const nextPosition = {
-      x: parentPosition.x + MIND_COLUMN_GAP,
-      y: children.length ? siblingBottom + MIND_ROW_GAP : parentPosition.y,
-    };
-    setNodePositions((positions) => ({
-      ...positions,
-      [next.id]: positions[next.id] ?? nextPosition,
-    }));
-    window.requestAnimationFrame(() => mindFlowRef.current?.setCenter(nextPosition.x + 116, nextPosition.y + 44, { duration: 360, zoom: 0.9 }));
+    arrangeMindTree(nextTasks, next.id);
     return next;
   };
 
@@ -824,16 +836,9 @@ export function TaskMapWorkspace({ language, onLanguageChange, onOpenHome, onOpe
         dependsOn: index > 0 ? [] : undefined,
       };
     });
-    persist([...tasks, ...children]);
-    const parentDepth = taskDepth(parent, tasks);
-    const parentRow = Math.max(0, visibleTasks.findIndex((task) => task.id === parent.id));
-    setNodePositions((positions) => ({
-      ...positions,
-      ...Object.fromEntries(children.map((child, index) => [child.id, {
-        x: (parentDepth + 1) * 310,
-        y: (parentRow + index + 1) * 96,
-      }])),
-    }));
+    const nextTasks = [...tasks.map((task) => task.id === parent.id ? { ...task, collapsed: false } : task), ...children];
+    persist(nextTasks);
+    arrangeMindTree(nextTasks, children[0]?.id);
     setMessage(isEnglish ? `Inserted ${children.length} subtasks via ${provider}.` : `已通过 ${provider} 插入 ${children.length} 个子任务。`);
   };
 
