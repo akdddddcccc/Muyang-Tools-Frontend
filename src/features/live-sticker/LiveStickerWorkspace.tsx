@@ -206,6 +206,7 @@ export function LiveStickerWorkspace({
             onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
             sideSticker={sideSticker}
             onSideStickerChange={updateSideSticker}
+            onOpenComposition={() => setActiveTool("composition")}
             health={health}
             language={language}
           />
@@ -285,6 +286,7 @@ function ToolPanel({
   onRedo,
   onTypographyChange,
   onSideStickerChange,
+  onOpenComposition,
   health,
   language,
 }: {
@@ -307,6 +309,7 @@ function ToolPanel({
   onRedo: () => void;
   onTypographyChange: (settings: Partial<TypographySettings>) => void;
   onSideStickerChange: (settings: Partial<SideStickerSettings>) => void;
+  onOpenComposition: () => void;
   health: CoreHealth | null;
   language: "zh" | "en";
 }) {
@@ -317,7 +320,7 @@ function ToolPanel({
     return <TypographyTool language={language} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
   }
   if (activeTool === "side-editor") {
-    return <SideStickerTool language={language} assets={assets} settings={sideSticker} onSettingsChange={onSideStickerChange} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} projectReady={projectReady} />;
+    return <SideStickerTool language={language} assets={assets} settings={sideSticker} onSettingsChange={onSideStickerChange} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onComplete={onOpenComposition} projectReady={projectReady} />;
   }
   if (activeTool === "composition") {
     return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
@@ -545,11 +548,13 @@ function SideStickerTool({
   settings,
   onSettingsChange,
   onAddAsset,
+  onComplete,
   projectReady,
 }: ToolProps & {
   language: "zh" | "en";
   settings: SideStickerSettings;
   onSettingsChange: (settings: Partial<SideStickerSettings>) => void;
+  onComplete: () => void;
   projectReady: boolean;
 }) {
   const isEnglish = language === "en";
@@ -633,6 +638,7 @@ function SideStickerTool({
       const blob = await renderSideStickerPng(settings, { talentSrc, giftOneSrc, giftTwoSrc, backgroundSrc });
       const asset = await onAddAsset(new File([blob], `side-sticker-${settings.mode}-${Date.now()}.png`, { type: "image/png" }), "side");
       setMessage(isEnglish ? `Added ${asset.fileName} to composition.` : "侧贴已生成，并自动写入效果融合。 ");
+      onComplete();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (isEnglish ? "Unable to render side sticker." : "侧贴生成失败。"));
     } finally {
@@ -681,7 +687,11 @@ function SideStickerTool({
               <small>{generationReference ? (isEnglish ? `Reference: ${generationReference.fileName}` : `生图参考：${generationReference.fileName}`) : (isEnglish ? "Add a generation reference in Step 1." : "请先在第 1 步添加生图参考。")}</small>
             </div>
           </section>
-          <button className="side-render-action" type="button" disabled={!projectReady || isRendering} onClick={() => void createSideSticker()}>{isRendering ? (isEnglish ? "Rendering..." : "正在生成…") : (isEnglish ? "Generate and place" : "生成并置入效果融合")}</button>
+          <section className="side-finalize-block">
+            <p>{isEnglish ? "FINALIZE" : "侧贴定稿"}</p>
+            <button className="side-render-action" type="button" disabled={!projectReady || isRendering} onClick={() => void createSideSticker()}>{isRendering ? (isEnglish ? "Finalizing..." : "正在定稿…") : (isEnglish ? "Approve and continue →" : "审核完成，进入效果融合 →")}</button>
+            <small>{isEnglish ? "Creates the final transparent PNG, adds it to project assets and opens Composition." : "自动生成透明侧贴资产、写入项目资产，并跳转到效果融合。"}</small>
+          </section>
           <small className="side-editor-message">{message || (isEnglish ? "Output uses a transparent background." : "输出为透明背景 PNG，并保留当前模板设置。")}</small>
         </aside>
       </div>
@@ -705,10 +715,10 @@ function SideStickerPreview({ language, settings, talentSrc, giftOneSrc, giftTwo
   const gradient = `linear-gradient(180deg, ${settings.primaryColor} 0%, ${hexToRgba(settings.primaryColor, .7)} 24%, ${hexToRgba(settings.secondaryColor, .4)} 82%, ${hexToRgba(settings.secondaryColor, .16)} 100%)`;
   const generatedOverlay = `linear-gradient(180deg, ${hexToRgba(settings.primaryColor, .18)} 0%, ${hexToRgba(settings.primaryColor, .08)} 34%, ${hexToRgba(settings.secondaryColor, .44)} 100%)`;
   const footerBackground = createVividAccent(settings.primaryColor);
+  const backgroundStyle = backgroundSrc
+    ? { backgroundColor: settings.secondaryColor, backgroundImage: `${generatedOverlay}, url("${backgroundSrc}")`, backgroundPosition: "center", backgroundSize: "cover" }
+    : { background: gradient };
   const boardStyle = {
-    ...(backgroundSrc
-      ? { backgroundColor: settings.secondaryColor, backgroundImage: `${generatedOverlay}, url("${backgroundSrc}")`, backgroundPosition: "center", backgroundSize: "cover" }
-      : { background: gradient }),
     "--side-heading-color": adaptiveTextColor(settings.primaryColor, settings.primaryColor),
     "--side-card-text-color": adaptiveTextColor("#f7f8f5", settings.primaryColor),
     "--side-footer-background": footerBackground,
@@ -719,6 +729,7 @@ function SideStickerPreview({ language, settings, talentSrc, giftOneSrc, giftTwo
       <div className={`side-sticker-art ${settings.mode}`}>
         {settings.mode === "talent" ? <button className="side-talent-image" type="button" onClick={onReplaceTalent} title={language === "en" ? "Replace talent image" : "替换达人图"}><img src={talentSrc} alt="" /><span>{language === "en" ? "Replace" : "替换"}</span></button> : null}
         <div className="side-sticker-board" style={boardStyle}>
+          <div className="side-sticker-background" style={backgroundStyle} aria-hidden="true" />
           <div className="side-sticker-copy">
             <strong contentEditable suppressContentEditableWarning onBlur={commitText("eyebrow")}>{settings.eyebrow}</strong>
             <b contentEditable suppressContentEditableWarning onBlur={commitText("title")}>{settings.title}</b>
@@ -1629,26 +1640,42 @@ async function renderSideStickerPng(settings: SideStickerSettings, images: { tal
   ]);
   if (settings.mode === "talent") drawContainedImage(context, talent, 0, 0, 140, 175, "cover");
 
-  context.save();
-  roundedRectPath(context, 7, boardTop, 147, 298, 17.4);
-  context.clip();
+  const backgroundCanvas = document.createElement("canvas");
+  backgroundCanvas.width = 147 * scale;
+  backgroundCanvas.height = 298 * scale;
+  const backgroundContext = backgroundCanvas.getContext("2d");
+  if (!backgroundContext) throw new Error("无法创建侧贴背景画布。");
+  backgroundContext.scale(scale, scale);
   if (generatedBackground) {
-    drawContainedImage(context, generatedBackground, 7, boardTop, 147, 298, "cover");
-    const overlay = context.createLinearGradient(0, boardTop, 0, boardTop + 298);
+    drawContainedImage(backgroundContext, generatedBackground, 0, 0, 147, 298, "cover");
+    const overlay = backgroundContext.createLinearGradient(0, 0, 0, 298);
     overlay.addColorStop(0, hexToRgba(settings.primaryColor, .18));
     overlay.addColorStop(.42, hexToRgba(settings.primaryColor, .08));
     overlay.addColorStop(1, hexToRgba(settings.secondaryColor, .44));
-    context.fillStyle = overlay;
-    context.fillRect(7, boardTop, 147, 298);
+    backgroundContext.fillStyle = overlay;
+    backgroundContext.fillRect(0, 0, 147, 298);
   } else {
-    const gradient = context.createLinearGradient(0, boardTop, 0, boardTop + 298);
+    const gradient = backgroundContext.createLinearGradient(0, 0, 0, 298);
     gradient.addColorStop(0, settings.primaryColor);
     gradient.addColorStop(.24, hexToRgba(settings.primaryColor, .7));
     gradient.addColorStop(.82, hexToRgba(settings.secondaryColor, .4));
     gradient.addColorStop(1, hexToRgba(settings.secondaryColor, .16));
-    context.fillStyle = gradient;
-    context.fillRect(7, boardTop, 147, 298);
+    backgroundContext.fillStyle = gradient;
+    backgroundContext.fillRect(0, 0, 147, 298);
   }
+  backgroundContext.globalCompositeOperation = "destination-in";
+  const alphaFade = backgroundContext.createLinearGradient(0, 0, 0, 298);
+  alphaFade.addColorStop(0, "rgba(0,0,0,1)");
+  alphaFade.addColorStop(.38, "rgba(0,0,0,.92)");
+  alphaFade.addColorStop(.72, "rgba(0,0,0,.56)");
+  alphaFade.addColorStop(1, "rgba(0,0,0,.08)");
+  backgroundContext.fillStyle = alphaFade;
+  backgroundContext.fillRect(0, 0, 147, 298);
+
+  context.save();
+  roundedRectPath(context, 7, boardTop, 147, 298, 17.4);
+  context.clip();
+  context.drawImage(backgroundCanvas, 7, boardTop, 147, 298);
   context.restore();
 
   context.textAlign = "center";
