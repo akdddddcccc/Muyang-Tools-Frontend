@@ -217,9 +217,10 @@ export function LiveStickerWorkspace({
 
 function AssetRail({ language, assets, onRemove, onClear, persistenceState }: { language: "zh" | "en"; assets: ProjectAsset[]; onRemove: (assetId: string) => void; onClear: () => void; persistenceState: PersistenceState }) {
   const isEnglish = language === "en";
+  const [expandedGroups, setExpandedGroups] = useState<Partial<Record<AssetCategory, boolean>>>({});
   const totalSize = assets.reduce((sum, asset) => sum + asset.sizeBytes, 0);
   const groups = assetCategoryOrder
-    .map((category) => ({ category, assets: assets.filter((asset) => assetCategoryFor(asset.kind) === category) }))
+    .map((category) => ({ category, assets: assets.filter((asset) => assetCategoryFor(asset.kind) === category).slice().reverse() }))
     .filter((group) => group.assets.length > 0);
   const clearAll = () => {
     if (!window.confirm(isEnglish ? `Clear all ${assets.length} cached assets? This cannot be undone.` : `确定清空全部 ${assets.length} 个缓存素材吗？此操作不可撤销。`)) return;
@@ -236,24 +237,28 @@ function AssetRail({ language, assets, onRemove, onClear, persistenceState }: { 
         <span className="asset-empty">{isEnglish ? "No assets uploaded yet" : "还没有上传素材"}</span>
       ) : (
         <div className="asset-groups">
-          {groups.map((group) => (
-            <section className="asset-group" key={group.category}>
+          {groups.map((group) => {
+            const expanded = Boolean(expandedGroups[group.category]);
+            const visibleAssets = expanded ? group.assets : group.assets.slice(0, 3);
+            const hiddenCount = group.assets.length - 3;
+            return <section className="asset-group" key={group.category}>
               <div className="asset-group-heading">
                 <strong>{assetCategoryLabel(group.category, language)}</strong>
                 <span>{group.assets.length}</span>
               </div>
               <div className="asset-chips">
-                {group.assets.map((asset) => (
-                  <div className="asset-chip" key={asset.id}>
+                {visibleAssets.map((asset) => (
+                  <div className="asset-chip" key={asset.id} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`}>
                     <img alt="" src={asset.previewUrl} />
                     <span>{assetLabel(asset.kind, language)} · {asset.fileName}</span>
                     {asset.trimmed ? <em>{isEnglish ? "trimmed" : "已预剪裁"}</em> : null}
                     <button aria-label={isEnglish ? `Remove ${asset.fileName}` : `移除 ${asset.fileName}`} onClick={() => onRemove(asset.id)}>×</button>
                   </div>
                 ))}
+                {hiddenCount > 0 ? <button className="asset-group-more" type="button" aria-expanded={expanded} onClick={() => setExpandedGroups((current) => ({ ...current, [group.category]: !expanded }))}>{expanded ? (isEnglish ? "Collapse" : "收起") : (isEnglish ? `… ${hiddenCount} more` : `… 还有 ${hiddenCount} 个`)}</button> : null}
               </div>
-            </section>
-          ))}
+            </section>;
+          })}
         </div>
       )}
     </section>
