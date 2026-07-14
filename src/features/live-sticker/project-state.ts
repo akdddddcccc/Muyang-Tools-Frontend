@@ -104,8 +104,8 @@ const defaultLayerGeometry: Record<CompositionLayerKind, Omit<CompositionLayer, 
   "base-image": { x: 0, y: 0, width: 100, height: 100, opacity: 100, visible: true, zIndex: 0 },
   top: { x: 0, y: 0, width: 100, height: 22, opacity: 100, visible: true, zIndex: 20 },
   bottom: { x: 0, y: 80, width: 100, height: 20, opacity: 100, visible: true, zIndex: 20 },
-  side: { x: 84, y: 24, width: 16, height: 56, opacity: 100, visible: true, zIndex: 30 },
-  typography: { x: 10, y: 40, width: 80, height: 14, opacity: 100, visible: true, zIndex: 40 },
+  side: { x: 84, y: 24, width: 16, height: 56, opacity: 100, visible: false, zIndex: 30 },
+  typography: { x: 10, y: 40, width: 80, height: 14, opacity: 100, visible: false, zIndex: 40 },
 };
 
 function makeAssetId() {
@@ -131,7 +131,7 @@ function cloneComposition(composition: CompositionDocument): CompositionDocument
 function normalizeComposition(composition: CompositionDocument): CompositionDocument {
   return {
     ...composition,
-    layers: composition.layers.map((layer) => ({
+    layers: composition.layers.map((layer) => normalizeLayer({
       ...layer,
       mask: {
         ...emptyMask(),
@@ -147,6 +147,9 @@ function isCompositionLayerKind(kind: ProjectAssetKind): kind is CompositionLaye
 }
 
 function normalizeLayer(layer: CompositionLayer): CompositionLayer {
+  if (layer.kind === "base-image") {
+    return { ...layer, ...defaultLayerGeometry["base-image"], opacity: clamp(layer.opacity, 0, 100), visible: layer.visible };
+  }
   const width = clamp(layer.width, 1, 100);
   const height = clamp(layer.height, 1, 100);
   return { ...layer, x: clamp(layer.x, 0, 100 - width), y: clamp(layer.y, 0, 100 - height), width, height, opacity: clamp(layer.opacity, 0, 100) };
@@ -183,7 +186,7 @@ function initialLayerGeometry(kind: CompositionLayerKind, imageAspect: number) {
 function addAssetToComposition(composition: CompositionDocument, asset: ProjectAsset, imageAspect: number): CompositionDocument {
   if (!isCompositionLayerKind(asset.kind)) return composition;
   const existing = composition.layers.find((layer) => layer.kind === asset.kind);
-  const base = { ...initialLayerGeometry(asset.kind, imageAspect), mask: existing?.mask ?? emptyMask() };
+  const base = { ...initialLayerGeometry(asset.kind, imageAspect), visible: existing?.visible ?? initialLayerGeometry(asset.kind, imageAspect).visible, mask: existing?.mask ?? emptyMask() };
   const nextLayer: CompositionLayer = { ...base, id: existing?.id ?? makeAssetId(), assetId: asset.id, kind: asset.kind };
   const layers = existing ? composition.layers.map((layer) => layer.id === existing.id ? nextLayer : layer) : [...composition.layers, nextLayer];
   return { ...composition, layers, selectedLayerId: nextLayer.id, updatedAt: new Date().toISOString() };

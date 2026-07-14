@@ -541,11 +541,14 @@ function CompositionTool({
   canRedo: boolean;
   projectReady: boolean;
 }) {
-  const [mode, setMode] = useState<"select" | "mask">("select");
+  const [fadeActive, setFadeActive] = useState(false);
   const canvasLayers = composition.layers
     .map((layer) => ({ layer, asset: assets.find((asset) => asset.id === layer.assetId) }))
     .filter((item): item is { layer: CompositionLayer; asset: ProjectAsset } => Boolean(item.asset));
-  const selectedLayer = canvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? canvasLayers.at(-1)?.layer;
+  const visibleCanvasLayers = canvasLayers.filter((item) => item.layer.visible);
+  const selectedLayer = visibleCanvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? visibleCanvasLayers.at(-1)?.layer;
+  const typographyLayer = canvasLayers.find((item) => item.layer.kind === "typography")?.layer;
+  const sideLayer = canvasLayers.find((item) => item.layer.kind === "side")?.layer;
 
   const isEnglish = language === "en";
   return (
@@ -555,18 +558,33 @@ function CompositionTool({
         <div className="composition-stage-wrap">
           <div className="composition-toolbar">
             <div className="canvas-mode-switch" aria-label={isEnglish ? "Canvas mode" : "画板模式"}>
-              <button className={mode === "select" ? "selected" : ""} onClick={() => setMode("select")}>{isEnglish ? "Select" : "选择图层"}</button>
-              <button className={mode === "mask" ? "selected" : ""} onClick={() => setMode("mask")}>{isEnglish ? "Fade draw" : "手绘渐隐"}</button>
+              <button className={fadeActive ? "selected" : ""} onClick={() => setFadeActive((active) => !active)}>{isEnglish ? "Fade draw" : "手绘渐隐"}</button>
+              <button className={typographyLayer?.visible ? "selected" : ""} disabled={!typographyLayer} onClick={() => {
+                if (!typographyLayer) return;
+                const visible = !typographyLayer.visible;
+                onBeginCompositionInteraction();
+                onUpdateLayer(typographyLayer.id, { visible });
+                onEndCompositionInteraction();
+                if (visible) onSelectLayer(typographyLayer.id);
+              }}>{isEnglish ? "Place text" : "置入文字框"}</button>
+              <button className={sideLayer?.visible ? "selected" : ""} disabled={!sideLayer} onClick={() => {
+                if (!sideLayer) return;
+                const visible = !sideLayer.visible;
+                onBeginCompositionInteraction();
+                onUpdateLayer(sideLayer.id, { visible });
+                onEndCompositionInteraction();
+                if (visible) onSelectLayer(sideLayer.id);
+              }}>{isEnglish ? "Place side" : "置入侧贴"}</button>
             </div>
             <div className="history-controls">
               <button aria-label="撤销画板操作" title="撤销" disabled={!canUndo} onClick={onUndo}>↶</button>
               <button aria-label="恢复画板操作" title="恢复" disabled={!canRedo} onClick={onRedo}>↷</button>
             </div>
           </div>
-          <CompositionCanvas language={language} layers={canvasLayers} selectedLayer={selectedLayer} mode={mode} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
-          <p className="stage-note">{mode === "mask" ? (isEnglish ? "Fade draw: draw a boundary within top or bottom sticker. The top retains above the line, bottom retains below. Hold Shift for a straight horizontal line." : "手绘模式：在上贴或下贴区域画渐隐边界线。上贴保留线以上，下贴保留线以下；按住 Shift 可画水平直线。") : (isEnglish ? "The canvas previews a 1080 x 1920 output. Select any layer and use arrow keys to position it; hold Shift for larger steps. Only side stickers may be dragged." : "画板等比例预览 1080 × 1920 输出。选中任意图层后用方向键定位，按住 Shift 可加速；只有侧贴可鼠标拖动位置。")}</p>
+          <CompositionCanvas language={language} layers={canvasLayers} selectedLayer={selectedLayer} fadeActive={fadeActive} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
+          <p className="stage-note">{fadeActive ? (isEnglish ? "Hover or draw inside the top or bottom sticker to reveal the content underneath. The top keeps above the line and the bottom keeps below it." : "移动到上贴或下贴区域时会临时显露下方内容；拖动画线后，上贴保留线以上、下贴保留线以下。") : (isEnglish ? "Text and side placement are independent switches. Use arrow keys for text and drag the side sticker directly." : "文字框和侧贴是独立开关：文字层用方向键定位并拖动手柄缩放，侧贴可直接拖动。")}</p>
         </div>
-        <CompositionInspector language={language} layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={canvasLayers} />
+        <CompositionInspector language={language} layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={visibleCanvasLayers} />
       </div>
     </ToolFrame>
   );
@@ -717,7 +735,7 @@ function CompositionCanvas({
   language,
   layers,
   selectedLayer,
-  mode,
+  fadeActive,
   onSelectLayer,
   onUpdateLayer,
   onUpdateLayerMask,
@@ -727,7 +745,7 @@ function CompositionCanvas({
   language: "zh" | "en";
   layers: Array<{ layer: CompositionLayer; asset: ProjectAsset }>;
   selectedLayer?: CompositionLayer;
-  mode: "select" | "mask";
+  fadeActive: boolean;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, patch: Partial<Pick<CompositionLayer, "x" | "y" | "width" | "height">>) => void;
   onUpdateLayerMask: (layerId: string, update: (mask: CompositionLayer["mask"]) => CompositionLayer["mask"]) => void;
@@ -741,9 +759,13 @@ function CompositionCanvas({
     layer: CompositionLayer;
     startX: number;
     startY: number;
+    aspectRatio?: number;
+    centerX?: number;
+    centerY?: number;
   } | null>(null);
   const fadeDrawing = useRef<{ pointerId: number; layer: CompositionLayer; lockedY: number | null } | null>(null);
   const [previewPath, setPreviewPath] = useState<Array<{ x: number; y: number }>>([]);
+  const [peekLayerId, setPeekLayerId] = useState<string>();
 
   const percentPoint = (event: ReactPointerEvent<HTMLElement>, element: HTMLElement) => {
     const bounds = element.getBoundingClientRect();
@@ -751,26 +773,38 @@ function CompositionCanvas({
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>, layer: CompositionLayer) => {
-    if (mode !== "select") return;
+    if (fadeActive) return;
+    const movable = layer.kind === "side" && layer.visible;
+    const selectableText = layer.kind === "typography" && layer.visible;
+    if (!movable && !selectableText) return;
     if (event.button !== 0) return;
     event.preventDefault();
     event.currentTarget.focus();
     onSelectLayer(layer.id);
-    if (layer.kind !== "side") return;
+    if (!movable) return;
     onBeginInteraction();
     event.currentTarget.setPointerCapture(event.pointerId);
     interaction.current = { type: "drag", pointerId: event.pointerId, layer, startX: event.clientX, startY: event.clientY };
   };
 
   const onResizeDown = (event: ReactPointerEvent<HTMLSpanElement>, layer: CompositionLayer) => {
-    if (mode !== "select" || event.button !== 0) return;
+    if (fadeActive || layer.kind !== "typography" || !layer.visible || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     onSelectLayer(layer.id);
     onBeginInteraction();
     const parent = event.currentTarget.parentElement;
     parent?.setPointerCapture(event.pointerId);
-    interaction.current = { type: "resize", pointerId: event.pointerId, layer, startX: event.clientX, startY: event.clientY };
+    interaction.current = {
+      type: "resize",
+      pointerId: event.pointerId,
+      layer,
+      startX: event.clientX,
+      startY: event.clientY,
+      aspectRatio: layer.width / Math.max(layer.height, 1),
+      centerX: layer.x + layer.width / 2,
+      centerY: layer.y + layer.height / 2,
+    };
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -784,7 +818,14 @@ function CompositionCanvas({
     if (active.type === "drag") {
       onUpdateLayer(active.layer.id, { x: active.layer.x + deltaX, y: active.layer.y + deltaY });
     } else {
-      onUpdateLayer(active.layer.id, { width: active.layer.width + deltaX, height: active.layer.height + deltaY });
+      const width = Math.max(8, active.layer.width + deltaX * 2);
+      const height = width / Math.max(active.aspectRatio ?? 1, 0.08);
+      onUpdateLayer(active.layer.id, {
+        width,
+        height,
+        x: (active.centerX ?? active.layer.x + active.layer.width / 2) - width / 2,
+        y: (active.centerY ?? active.layer.y + active.layer.height / 2) - height / 2,
+      });
     }
   };
 
@@ -795,7 +836,7 @@ function CompositionCanvas({
   };
 
   const onLayerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, layer: CompositionLayer) => {
-    if (mode !== "select") return;
+    if (fadeActive || layer.kind !== "typography" || !layer.visible) return;
     const step = event.shiftKey ? 5 : 1;
     const patch = event.key === "ArrowLeft" ? { x: layer.x - step }
       : event.key === "ArrowRight" ? { x: layer.x + step }
@@ -824,13 +865,14 @@ function CompositionCanvas({
   };
 
   const onFadeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (mode !== "mask" || event.button !== 0) return;
+    if (!fadeActive || event.button !== 0) return;
     const rawPoint = percentPoint(event, event.currentTarget);
     const layer = fadeTargetAt(rawPoint);
     if (!layer) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = constrainFadePoint(rawPoint, layer);
+    setPeekLayerId(layer.id);
     fadeDrawing.current = { pointerId: event.pointerId, layer, lockedY: event.shiftKey ? point.y : null };
     setPreviewPath([point]);
     onSelectLayer(layer.id);
@@ -840,7 +882,11 @@ function CompositionCanvas({
 
   const onFadeMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const active = fadeDrawing.current;
-    if (!active || active.pointerId !== event.pointerId) return;
+    if (!active) {
+      setPeekLayerId(fadeTargetAt(percentPoint(event, event.currentTarget))?.id);
+      return;
+    }
+    if (active.pointerId !== event.pointerId) return;
     const rawPoint = percentPoint(event, event.currentTarget);
     const constrained = constrainFadePoint(rawPoint, active.layer);
     const point = active.lockedY === null ? constrained : { ...constrained, y: active.lockedY };
@@ -857,15 +903,17 @@ function CompositionCanvas({
     if (!fadeDrawing.current || fadeDrawing.current.pointerId !== event.pointerId) return;
     fadeDrawing.current = null;
     setPreviewPath([]);
+    setPeekLayerId(undefined);
     onEndInteraction();
   };
 
   return (
     <div className="composition-stage" ref={stageRef} aria-label={language === "en" ? "Composition canvas" : "融合画板"}>
       <span className="composition-output-size">{COMPOSITION_OUTPUT.width} × {COMPOSITION_OUTPUT.height}</span>
+      <div className="composition-safe-lines" aria-hidden="true"><span /><span /></div>
       {layers.length === 0 ? <p>{language === "en" ? "Import a room background or sticker asset to place it here." : "导入底图或贴片素材后，图层会出现在这里。"}</p> : layers.map(({ layer, asset }) => (
         <div
-          className={`${layer.id === selectedLayer?.id ? "canvas-layer selected" : "canvas-layer"}${layer.kind === "side" ? " draggable-side" : " keyboard-positioned"}`}
+          className={`${layer.id === selectedLayer?.id ? "canvas-layer selected" : "canvas-layer"}${!fadeActive && layer.kind === "side" && layer.visible ? " draggable-side" : " locked-layer"}${!fadeActive && layer.kind === "typography" && layer.visible ? " keyboard-positioned" : ""}${layer.kind === "base-image" ? " base-image-layer" : ""}${layer.id === peekLayerId ? " mask-peek" : ""}`}
           key={layer.id}
           onPointerDown={(event) => onPointerDown(event, layer)}
           onPointerMove={onPointerMove}
@@ -873,20 +921,20 @@ function CompositionCanvas({
           onPointerCancel={onPointerEnd}
           onKeyDown={(event) => onLayerKeyDown(event, layer)}
           style={{
-            left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, opacity: layer.opacity / 100,
+            left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, opacity: (layer.opacity / 100) * (layer.id === peekLayerId ? 0.55 : 1),
             zIndex: layer.zIndex, visibility: layer.visible ? "visible" : "hidden", ...maskStyle(layer),
           }}
-          title={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} · ${asset.fileName} · ${language === "en" ? (layer.kind === "side" ? "drag or use arrow keys" : "use arrow keys to position") : (layer.kind === "side" ? "可拖动或使用方向键定位" : "使用方向键定位")}`}
+          title={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} · ${asset.fileName} · ${layer.kind === "base-image" ? (language === "en" ? "fixed 1920px height, centred without stretching" : "固定 1920 高度，等比例居中且不拉伸") : language === "en" ? (layer.kind === "side" ? "drag or use arrow keys" : "use arrow keys to position") : (layer.kind === "side" ? "可拖动或使用方向键定位" : "使用方向键定位")}`}
           role="button"
           tabIndex={0}
           aria-label={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} ${language === "en" ? "layer" : "图层"}`}
         >
           <img src={asset.previewUrl} alt={language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} draggable={false} />
           <span>{language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]}</span>
-          {layer.id === selectedLayer?.id && mode === "select" ? <i className="resize-handle" onPointerDown={(event) => onResizeDown(event, layer)} title={language === "en" ? "Drag to resize" : "拖动缩放"} /> : null}
+          {layer.id === selectedLayer?.id && !fadeActive && layer.kind === "typography" && layer.visible ? <i className="resize-handle" onPointerDown={(event) => onResizeDown(event, layer)} title={language === "en" ? "Drag to resize" : "拖动缩放"} /> : null}
         </div>
       ))}
-      {mode === "mask" ? <div className="fade-drawing-overlay" title={language === "en" ? "Draw on a top or bottom sticker. Hold Shift for a horizontal line." : "在上贴或下贴区域画渐隐线，按住 Shift 可画水平直线"} onPointerDown={onFadeStart} onPointerMove={onFadeMove} onPointerUp={onFadeEnd} onPointerCancel={onFadeEnd}>{previewPath.length > 1 ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={pointsToSvgPath(previewPath)} /></svg> : null}</div> : null}
+      {fadeActive ? <div className="fade-drawing-overlay" title={language === "en" ? "Draw on a top or bottom sticker. Hold Shift for a horizontal line." : "在上贴或下贴区域画渐隐线，按住 Shift 可画水平直线"} onPointerDown={onFadeStart} onPointerMove={onFadeMove} onPointerUp={onFadeEnd} onPointerCancel={onFadeEnd} onPointerLeave={() => { if (!fadeDrawing.current) setPeekLayerId(undefined); }}>{previewPath.length > 1 ? <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={pointsToSvgPath(previewPath)} /></svg> : null}</div> : null}
     </div>
   );
 }
@@ -927,14 +975,18 @@ function CompositionInspector({
       {layer && asset ? (
         <div className="layer-controls">
           <h3>{assetLabel(layer.kind, language)}</h3>
-          <p className="keyboard-tip">{isEnglish ? "Select on canvas, then use arrow keys to position. Hold Shift for larger steps." : "在画板选中后用方向键定位，按住 Shift 可加速。"}</p>
-          <LayerPositionReadout language={language} x={layer.x} y={layer.y} />
-          <LayerRange label={isEnglish ? "Width" : "宽度"} value={layer.width} min={1} onChange={(width) => onUpdateLayer(layer.id, { width })} onBegin={onBeginInteraction} onEnd={onEndInteraction} />
-          <LayerRange label={isEnglish ? "Height" : "高度"} value={layer.height} min={1} onChange={(height) => onUpdateLayer(layer.id, { height })} onBegin={onBeginInteraction} onEnd={onEndInteraction} />
+          <p className="keyboard-tip">{layer.kind === "typography" ? (isEnglish ? "Use arrow keys to position text; drag its canvas handle to scale proportionally." : "文字层用方向键定位，并通过画板右下角手柄等比例缩放。") : layer.kind === "side" ? (isEnglish ? "Switch to Place side, then drag it directly on the canvas." : "切换到“置入侧贴”后，可在画板中直接拖动。") : (isEnglish ? "This layer stays locked to preserve the composite layout." : "该图层保持锁定，以维持贴片合成结构。")}</p>
+          {layer.kind === "typography" || layer.kind === "side" ? <LayerPositionReadout language={language} x={layer.x} y={layer.y} /> : null}
+          {layer.kind === "typography" ? <>
+            <LayerRange label={isEnglish ? "Width" : "宽度"} value={layer.width} min={8} onChange={(width) => {
+              const height = width / Math.max(layer.width / Math.max(layer.height, 1), 0.08);
+              onUpdateLayer(layer.id, { width, height });
+            }} onBegin={onBeginInteraction} onEnd={onEndInteraction} />
+          </> : null}
           <LayerRange label={isEnglish ? "Opacity" : "透明度"} value={layer.opacity} min={0} onChange={(opacity) => onUpdateLayer(layer.id, { opacity })} onBegin={onBeginInteraction} onEnd={onEndInteraction} />
-          {layer.kind !== "base-image" && layer.kind !== "typography" ? <LayerRange label={isEnglish ? "Default feather" : "默认羽化"} value={layer.mask.feather} max={48} onChange={(feather) => onUpdateLayerMask(layer.id, (mask) => ({ ...mask, feather }))} onBegin={onBeginInteraction} onEnd={onEndInteraction} /> : null}
+          {layer.kind === "top" || layer.kind === "bottom" ? <LayerRange label={isEnglish ? "Default feather" : "默认羽化"} value={layer.mask.feather} max={48} onChange={(feather) => onUpdateLayerMask(layer.id, (mask) => ({ ...mask, feather }))} onBegin={onBeginInteraction} onEnd={onEndInteraction} /> : null}
           <label className="layer-visibility"><input type="checkbox" checked={layer.visible} onChange={(event) => { onBeginInteraction(); onUpdateLayer(layer.id, { visible: event.target.checked }); onEndInteraction(); }} /> {isEnglish ? "Show layer" : "显示图层"}</label>
-          <button className="mask-reset" onClick={() => { onBeginInteraction(); onUpdateLayer(layer.id, { mask: { mode: "default", feather: layer.mask.feather, fadePath: [], edgeTexture: "none" } }); onEndInteraction(); }}>{isEnglish ? "Reset hand-drawn fade" : "重置手绘渐隐"}</button>
+          {layer.kind === "top" || layer.kind === "bottom" ? <button className="mask-reset" onClick={() => { onBeginInteraction(); onUpdateLayer(layer.id, { mask: { mode: "default", feather: layer.mask.feather, fadePath: [], edgeTexture: "none" } }); onEndInteraction(); }}>{isEnglish ? "Reset hand-drawn fade" : "重置手绘渐隐"}</button> : null}
         </div>
       ) : <p className="empty-copy">{isEnglish ? "Select a layer to edit its local properties." : "选择一个图层后可调整它的本地状态。"}</p>}
     </aside>
