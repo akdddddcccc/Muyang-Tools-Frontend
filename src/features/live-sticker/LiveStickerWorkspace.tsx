@@ -1,6 +1,4 @@
-import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, BaseEdge, Controls, Handle, Position, ReactFlow, ReactFlowProvider, addEdge, getBezierPath, useEdgesState, useNodesState, type Connection, type EdgeProps, type NodeProps } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchBackgroundJob, fetchCoreHealth, fetchTypographyJob, getCoreBaseUrl, type BackgroundGenerationJob, type BackgroundKind, type CoreHealth, type ImageReferenceInput, type TypographyGenerationJob } from "../../lib/core-api";
 import {
   assetKindLabels,
@@ -10,13 +8,14 @@ import {
   type PersistenceState,
   type ProjectAsset,
   type ProjectAssetKind,
+  type SideStickerSettings,
   type TypographyPresetKey,
   type TypographySettings,
   useProjectWorkspace,
 } from "./project-state";
 import "./live-sticker.css";
 
-type ToolId = "background" | "typography" | "composition" | "exports";
+type ToolId = "background" | "typography" | "side-editor" | "composition" | "exports";
 type HealthState = "checking" | "online" | "offline";
 type CompositionInputKind = "base-image" | "top" | "bottom" | "side" | "typography";
 type FlowAssetNodeData = {
@@ -30,10 +29,11 @@ type FlowAssetNodeData = {
 };
 
 const tools: Array<{ id: ToolId; step: string; label: string; caption: string; englishLabel: string; englishCaption: string }> = [
-  { id: "background", step: "01", label: "背景生成", caption: "上贴 / 下贴 / 侧贴", englishLabel: "Background", englishCaption: "Top / Bottom / Side" },
+  { id: "background", step: "01", label: "背景生成", caption: "上贴 / 下贴", englishLabel: "Background", englishCaption: "Top / Bottom" },
   { id: "typography", step: "02", label: "文字图层", caption: "透明文字素材", englishLabel: "Typography", englishCaption: "Transparent text" },
-  { id: "composition", step: "03", label: "效果融合", caption: "画板与遮罩", englishLabel: "Composition", englishCaption: "Canvas & mask" },
-  { id: "exports", step: "04", label: "导出资产", caption: "选择与打包", englishLabel: "Exports", englishCaption: "Select & package" },
+  { id: "side-editor", step: "03", label: "侧贴编辑", caption: "平铺 / 达人空降", englishLabel: "Side sticker", englishCaption: "Flat / Talent" },
+  { id: "composition", step: "04", label: "效果融合", caption: "画板与遮罩", englishLabel: "Composition", englishCaption: "Canvas & mask" },
+  { id: "exports", step: "05", label: "导出资产", caption: "选择与打包", englishLabel: "Exports", englishCaption: "Select & package" },
 ];
 
 const publicAssetUrl = (path: string) => `${import.meta.env.BASE_URL}assets/${path}`;
@@ -69,19 +69,6 @@ const fontPresets: Array<{ key: TypographyPresetKey; label: string; detail: stri
   { key: "custom-reference", label: "自定义字体字形", detail: "上传去色字体图，只学习字形、笔画与局部纹理", englishLabel: "Custom glyph reference", englishDetail: "Upload a desaturated reference for glyphs and strokes" },
 ];
 
-function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const media = window.matchMedia(query);
-    const update = () => setMatches(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, [query]);
-  return matches;
-}
-
 export function LiveStickerWorkspace({
   language,
   onLanguageChange,
@@ -98,12 +85,15 @@ export function LiveStickerWorkspace({
     assets,
     composition,
     typography,
+    sideSticker,
     persistenceState,
     projectReady,
     canUndo,
     canRedo,
     addAsset,
     removeAsset,
+    reuseAsset,
+    clearAssets,
     selectLayer,
     updateLayer,
     updateLayerMask,
@@ -112,6 +102,7 @@ export function LiveStickerWorkspace({
     undoComposition,
     redoComposition,
     setTypography,
+    updateSideSticker,
   } = useProjectWorkspace();
   const [healthState, setHealthState] = useState<HealthState>("checking");
   const [health, setHealth] = useState<CoreHealth | null>(null);
@@ -194,7 +185,7 @@ export function LiveStickerWorkspace({
         </aside>
 
         <section className="tool-canvas">
-          <AssetRail language={language} assets={assets} onRemove={removeAsset} persistenceState={persistenceState} />
+          <AssetRail language={language} assets={assets} onRemove={removeAsset} onClear={clearAssets} persistenceState={persistenceState} />
           <ToolPanel
             activeTool={activeTool}
             assets={assets}
@@ -204,6 +195,7 @@ export function LiveStickerWorkspace({
             canUndo={canUndo}
             canRedo={canRedo}
             onAddAsset={addAsset}
+            onReuseAsset={reuseAsset}
             onSelectLayer={selectLayer}
             onUpdateLayer={updateLayer}
             onUpdateLayerMask={updateLayerMask}
@@ -212,6 +204,8 @@ export function LiveStickerWorkspace({
             onUndo={undoComposition}
             onRedo={redoComposition}
             onTypographyChange={(patch) => setTypography((current) => ({ ...current, ...patch }))}
+            sideSticker={sideSticker}
+            onSideStickerChange={updateSideSticker}
             health={health}
             language={language}
           />
@@ -221,25 +215,44 @@ export function LiveStickerWorkspace({
   );
 }
 
-function AssetRail({ language, assets, onRemove, persistenceState }: { language: "zh" | "en"; assets: ProjectAsset[]; onRemove: (assetId: string) => void; persistenceState: PersistenceState }) {
+function AssetRail({ language, assets, onRemove, onClear, persistenceState }: { language: "zh" | "en"; assets: ProjectAsset[]; onRemove: (assetId: string) => void; onClear: () => void; persistenceState: PersistenceState }) {
   const isEnglish = language === "en";
+  const totalSize = assets.reduce((sum, asset) => sum + asset.sizeBytes, 0);
+  const groups = assetCategoryOrder
+    .map((category) => ({ category, assets: assets.filter((asset) => assetCategoryFor(asset.kind) === category) }))
+    .filter((group) => group.assets.length > 0);
+  const clearAll = () => {
+    if (!window.confirm(isEnglish ? `Clear all ${assets.length} cached assets? This cannot be undone.` : `确定清空全部 ${assets.length} 个缓存素材吗？此操作不可撤销。`)) return;
+    onClear();
+  };
   return (
     <section className="asset-rail" aria-label={isEnglish ? "Current project assets" : "当前项目资产"}>
       <div>
         <p>{isEnglish ? "CURRENT PROJECT ASSETS" : "当前项目资产"}</p>
-        <small>{isEnglish ? persistenceCopyEn(persistenceState) : persistenceCopy(persistenceState)}</small>
+        <small>{isEnglish ? persistenceCopyEn(persistenceState) : persistenceCopy(persistenceState)}{assets.length ? ` · ${formatBytes(totalSize)}` : ""}</small>
+        {assets.length ? <button className="asset-clear-all" type="button" onClick={clearAll}>{isEnglish ? "Clear cache" : "清空缓存"}</button> : null}
       </div>
       {assets.length === 0 ? (
         <span className="asset-empty">{isEnglish ? "No assets uploaded yet" : "还没有上传素材"}</span>
       ) : (
-        <div className="asset-chips">
-          {assets.map((asset) => (
-            <div className="asset-chip" key={asset.id}>
-              <img alt="" src={asset.previewUrl} />
-              <span>{assetLabel(asset.kind, language)} · {asset.fileName}</span>
-              {asset.trimmed ? <em>{isEnglish ? "trimmed" : "已预剪裁"}</em> : null}
-              <button aria-label={isEnglish ? `Remove ${asset.fileName}` : `移除 ${asset.fileName}`} onClick={() => onRemove(asset.id)}>×</button>
-            </div>
+        <div className="asset-groups">
+          {groups.map((group) => (
+            <section className="asset-group" key={group.category}>
+              <div className="asset-group-heading">
+                <strong>{assetCategoryLabel(group.category, language)}</strong>
+                <span>{group.assets.length}</span>
+              </div>
+              <div className="asset-chips">
+                {group.assets.map((asset) => (
+                  <div className="asset-chip" key={asset.id}>
+                    <img alt="" src={asset.previewUrl} />
+                    <span>{assetLabel(asset.kind, language)} · {asset.fileName}</span>
+                    {asset.trimmed ? <em>{isEnglish ? "trimmed" : "已预剪裁"}</em> : null}
+                    <button aria-label={isEnglish ? `Remove ${asset.fileName}` : `移除 ${asset.fileName}`} onClick={() => onRemove(asset.id)}>×</button>
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
@@ -252,10 +265,12 @@ function ToolPanel({
   assets,
   composition,
   typography,
+  sideSticker,
   projectReady,
   canUndo,
   canRedo,
   onAddAsset,
+  onReuseAsset,
   onSelectLayer,
   onUpdateLayer,
   onUpdateLayerMask,
@@ -264,6 +279,7 @@ function ToolPanel({
   onUndo,
   onRedo,
   onTypographyChange,
+  onSideStickerChange,
   health,
   language,
 }: {
@@ -271,10 +287,12 @@ function ToolPanel({
   assets: ProjectAsset[];
   composition: CompositionDocument;
   typography: TypographySettings;
+  sideSticker: SideStickerSettings;
   projectReady: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+  onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, patch: Partial<Pick<CompositionLayer, "x" | "y" | "width" | "height" | "opacity" | "visible" | "mask">>) => void;
   onUpdateLayerMask: (layerId: string, update: (mask: CompositionLayer["mask"]) => CompositionLayer["mask"]) => void;
@@ -283,22 +301,26 @@ function ToolPanel({
   onUndo: () => void;
   onRedo: () => void;
   onTypographyChange: (settings: Partial<TypographySettings>) => void;
+  onSideStickerChange: (settings: Partial<SideStickerSettings>) => void;
   health: CoreHealth | null;
   language: "zh" | "en";
 }) {
   if (activeTool === "background") {
-    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} health={health} projectReady={projectReady} />;
+    return <BackgroundTool language={language} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} health={health} projectReady={projectReady} />;
   }
   if (activeTool === "typography") {
-    return <TypographyTool language={language} assets={assets} onAddAsset={onAddAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
+    return <TypographyTool language={language} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} projectReady={projectReady} typography={typography} onTypographyChange={onTypographyChange} />;
+  }
+  if (activeTool === "side-editor") {
+    return <SideStickerTool language={language} assets={assets} settings={sideSticker} onSettingsChange={onSideStickerChange} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} projectReady={projectReady} />;
   }
   if (activeTool === "composition") {
-    return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
+    return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
   }
   return <ExportTool language={language} assets={assets} />;
 }
 
-function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
+function BackgroundTool({ language, assets, onAddAsset, onReuseAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
   const isEnglish = language === "en";
   const [prompt, setPrompt] = useState("");
   const [runningKind, setRunningKind] = useState<BackgroundKind | "all" | "">("");
@@ -337,15 +359,13 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
       if (kind === "all") {
         safeSetMessage(isEnglish ? "Generating top sticker first..." : "正在优先生成上贴…");
         await generateOne("top");
-        safeSetMessage(isEnglish ? "Top sticker is ready. Bottom and side continue in the background." : "上贴已完成；下贴与侧贴继续在后台生成。");
+        safeSetMessage(isEnglish ? "Top sticker is ready. The bottom sticker continues in the background." : "上贴已完成；下贴继续在后台生成。");
         void (async () => {
-          for (const item of ["bottom", "side"] as BackgroundKind[]) {
-            try {
-              safeSetMessage(isEnglish ? `Generating ${item} in the background...` : `后台继续生成${item === "bottom" ? "下贴" : "侧贴"}…`);
-              await generateOne(item);
-            } catch (error) {
-              console.warn(`Background ${item} generation failed`, error);
-            }
+          try {
+            safeSetMessage(isEnglish ? "Generating the bottom sticker in the background..." : "后台继续生成下贴…");
+            await generateOne("bottom");
+          } catch (error) {
+            console.warn("Background bottom generation failed", error);
           }
           safeSetMessage(isEnglish ? "Background assets generated." : "背景贴片已生成完成。");
           safeSetRunningKind("");
@@ -363,15 +383,15 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
   };
 
   return (
-    <ToolFrame eyebrow="01 / BACKGROUND ASSETS" title={isEnglish ? "Background assets" : "背景生成"} detail={isEnglish ? "Generate each asset independently or run the fixed top, bottom and side sequence. The latest reference supplies palette, material and texture." : "上贴、下贴与侧贴既可独立生成，也可按上、下、侧的固定顺序依次生成；最新参考图提供色彩、材质与纹理。"}>
+    <ToolFrame eyebrow="01 / BACKGROUND ASSETS" title={isEnglish ? "Background assets" : "背景生成"} detail={isEnglish ? "Generate top and bottom stickers independently or run them in sequence. The latest reference supplies palette, material and texture; side backgrounds are generated in Step 3." : "上贴与下贴既可独立生成，也可按固定顺序依次生成；最新参考图提供色彩、材质与纹理，侧贴背景统一在第 3 步生成。"}>
       <div className="tool-grid two">
-        <AssetUpload language={language} kind="reference" label={isEnglish ? "Room / colour reference" : "添加直播间 / 色彩参考图"} help={isEnglish ? "Reuse it in later background and typography work." : "上传后可在后续背景生成与文字图层中复用。"} onAddAsset={onAddAsset} disabled={!projectReady} />
-        <StatusCard title={isEnglish ? "Core service" : "Core 服务"} value={health?.providers.imageGeneration === "ready" ? (isEnglish ? "OFOX ready" : "OFOX 已就绪") : (isEnglish ? "Waiting for Core" : "等待 Core")} detail={health?.providers.imageGeneration === "ready" ? (isEnglish ? "Background generation is available." : "上、下、侧贴生成均可用。") : (isEnglish ? "Check the server OFOX configuration." : "请检查服务器 OFOX 配置。")} />
+        <AssetUpload language={language} kind="reference" label={isEnglish ? "Room / colour reference" : "添加直播间 / 色彩参考图"} help={isEnglish ? "Reuse it in later background and typography work." : "上传后可在后续背景生成与文字图层中复用。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
+        <StatusCard title={isEnglish ? "Core service" : "Core 服务"} value={health?.providers.imageGeneration === "ready" ? (isEnglish ? "OFOX ready" : "OFOX 已就绪") : (isEnglish ? "Waiting for Core" : "等待 Core")} detail={health?.providers.imageGeneration === "ready" ? (isEnglish ? "Top and bottom sticker generation is available." : "上贴、下贴生成均可用。") : (isEnglish ? "Check the server OFOX configuration." : "请检查服务器 OFOX 配置。")} />
       </div>
       <TypographyInstructionInput language={language} value={prompt} onChange={setPrompt} disabled={!projectReady || Boolean(runningKind)} />
       <div className="generation-action-row background-generation-actions">
-        <button type="button" onClick={() => void runGeneration("all")} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === "all" ? (isEnglish ? "Generating..." : "依次生成中…") : (isEnglish ? "Generate all" : "依次生成上 / 下 / 侧")}</button>
-        {(["top", "bottom", "side"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : kind === "bottom" ? "下贴" : "侧贴"}`}</button>)}
+        <button type="button" onClick={() => void runGeneration("all")} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === "all" ? (isEnglish ? "Generating..." : "依次生成中…") : (isEnglish ? "Generate both" : "依次生成上 / 下")}</button>
+        {(["top", "bottom"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : "下贴"}`}</button>)}
         <p>{message || (!reference ? (isEnglish ? "Add a room or colour reference to enable OFOX generation." : "添加直播间或色彩参考图后即可启用 OFOX 生图。") : (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。"))}</p>
       </div>
       <AssetCollection language={language} assets={assets.filter((asset) => asset.kind === "reference")} empty={isEnglish ? "Add a reference image for later background work." : "添加一张参考图后，背景任务会从这里读取素材。"} />
@@ -380,7 +400,7 @@ function BackgroundTool({ language, assets, onAddAsset, health, projectReady }: 
   );
 }
 
-function TypographyTool({ language, assets, onAddAsset, projectReady, typography, onTypographyChange }: ToolProps & { language: "zh" | "en"; projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
+function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectReady, typography, onTypographyChange }: ToolProps & { language: "zh" | "en"; projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
   const projectReference = latestAsset(assets, "reference");
   const isRefineMode = typography.mode === "refine";
@@ -454,8 +474,8 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
         <>
           <div className="tool-grid typography-refine-grid">
             <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} disabled={!projectReady} />
-            <AssetUpload language={language} kind="typography" label={isEnglish ? "Existing text layer" : "已有文字图层"} help={isEnglish ? "Upload transparent or solid text art to learn its lettering, font, colour and texture." : "上传透明或实底文字图；它会学习字形、字体、颜色与纹理。"} onAddAsset={onAddAsset} disabled={!projectReady} />
-            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Colour/material override" : "颜色与质感覆盖参考"} help={isEnglish ? "Optional. When present it takes priority for colour, material and ornaments." : "非必填；上传后优先采用此图的颜色、材质与装饰。"} onAddAsset={onAddAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="typography" label={isEnglish ? "Existing text layer" : "已有文字图层"} help={isEnglish ? "Upload transparent or solid text art to learn its lettering, font, colour and texture." : "上传透明或实底文字图；它会学习字形、字体、颜色与纹理。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Colour/material override" : "颜色与质感覆盖参考"} help={isEnglish ? "Optional. When present it takes priority for colour, material and ornaments." : "非必填；上传后优先采用此图的颜色、材质与装饰。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
           </div>
           <div className="typography-matte-row">
             <div><strong>{isEnglish ? "Draft background" : "生成底稿"}</strong><small>{isEnglish ? "A solid matte makes the next automatic cutout reliable." : "输出为实底文字图，便于下一步自动抠图。"}</small></div>
@@ -468,8 +488,8 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
       ) : (
         <>
           <div className="tool-grid two typography-input-grid">
-            <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} onAddAsset={onAddAsset} disabled={!projectReady} allowLayoutReference />
-            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "Overrides the top sticker. Otherwise the latest top sticker is inherited." : "上传后覆盖上贴；未上传时自动继承当前项目上贴。"} onAddAsset={onAddAsset} disabled={!projectReady} />
+            <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} allowLayoutReference />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "Overrides the top sticker. Otherwise the latest top sticker is inherited." : "上传后覆盖上贴；未上传时自动继承当前项目上贴。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
           </div>
           <TypographyInstructionInput language={language} value={typography.instruction} onChange={(instruction) => onTypographyChange({ instruction })} disabled={!projectReady} />
           <section className="font-preset-section" aria-label={isEnglish ? "Default generation fonts" : "默认生图字体"}>
@@ -482,6 +502,8 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
                   selected={typography.fontPresetKey === preset.key}
                   disabled={!projectReady}
                   onAddAsset={onAddAsset}
+                  assets={assets}
+                  onReuseAsset={onReuseAsset}
                   onActivate={() => onTypographyChange({ fontPresetKey: preset.key })}
                 />
               ) : (
@@ -509,6 +531,205 @@ function TypographyTool({ language, assets, onAddAsset, projectReady, typography
       <AssetCollection language={language} assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? (isEnglish ? "Upload an existing text layer to refine it with new copy." : "上传一张已有文字图层后，可按新的文本内容微调。") : (isEnglish ? "Enter copy to generate, or upload layout and glyph references." : "输入文本即可生成；也可以上传布局文本图或字体参考。")} />
       <TypographyOutputPreview language={language} assets={assets} isCuttingOut={isCuttingOut} message={cutoutMessage} onCutout={runCutout} />
     </ToolFrame>
+  );
+}
+
+function SideStickerTool({
+  language,
+  assets,
+  settings,
+  onSettingsChange,
+  onAddAsset,
+  projectReady,
+}: ToolProps & {
+  language: "zh" | "en";
+  settings: SideStickerSettings;
+  onSettingsChange: (settings: Partial<SideStickerSettings>) => void;
+  projectReady: boolean;
+}) {
+  const isEnglish = language === "en";
+  const [message, setMessage] = useState("");
+  const [isRendering, setIsRendering] = useState(false);
+  const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
+  const talentInput = useRef<HTMLInputElement>(null);
+  const giftOneInput = useRef<HTMLInputElement>(null);
+  const giftTwoInput = useRef<HTMLInputElement>(null);
+  const talentAsset = assets.find((asset) => asset.id === settings.talentAssetId);
+  const giftOneAsset = assets.find((asset) => asset.id === settings.giftOneAssetId);
+  const giftTwoAsset = assets.find((asset) => asset.id === settings.giftTwoAssetId);
+  const backgroundAsset = assets.find((asset) => asset.id === settings.backgroundAssetId);
+  const generationReference = latestAsset(assets, "reference");
+  const talentSrc = talentAsset?.previewUrl ?? publicAssetUrl("live-sticker/side-editor/talent.png");
+  const giftOneSrc = giftOneAsset?.previewUrl ?? publicAssetUrl("live-sticker/side-editor/gift-book.png");
+  const giftTwoSrc = giftTwoAsset?.previewUrl ?? publicAssetUrl("live-sticker/side-editor/gift-egg.png");
+  const backgroundSrc = backgroundAsset?.previewUrl;
+
+  const uploadSlot = async (event: ChangeEvent<HTMLInputElement>, kind: "side-gift" | "side-talent", key: "talentAssetId" | "giftOneAssetId" | "giftTwoAssetId") => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const asset = await onAddAsset(file, kind);
+      onSettingsChange({ [key]: asset.id });
+      setMessage(isEnglish ? "Image replaced." : "图片已替换。 ");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isEnglish ? "Unable to replace image." : "图片替换失败。"));
+    }
+  };
+
+  const inheritPalette = async () => {
+    const top = latestAsset(assets, "top");
+    const bottom = latestAsset(assets, "bottom");
+    if (!top && !bottom) {
+      setMessage(isEnglish ? "Generate or upload a top / bottom sticker first." : "请先生成或上传上贴、下贴。 ");
+      return;
+    }
+    try {
+      const primaryColor = await sampleAssetColor((top ?? bottom)!.blob);
+      const secondaryColor = bottom ? await sampleAssetColor(bottom.blob) : mixHex(primaryColor, "#ffffff", .62);
+      onSettingsChange({ primaryColor, secondaryColor });
+      setMessage(isEnglish ? "Palette inherited from the latest stickers." : "已继承最新上贴、下贴的主色。 ");
+    } catch {
+      setMessage(isEnglish ? "Unable to read the sticker palette." : "暂时无法读取贴片配色。 ");
+    }
+  };
+
+  const generateBackground = async () => {
+    if (!generationReference) {
+      setMessage(isEnglish ? "Add a generation reference in Step 1 first." : "请先在第 1 步添加生图参考。 ");
+      return;
+    }
+    setIsGeneratingBackground(true);
+    setMessage(isEnglish ? "Generating a detailed side background..." : "正在根据参考生成侧贴背景…");
+    try {
+      const prompt = isEnglish
+        ? "Create only a vertical livestream side-sticker background. No text, people, products or cards. Inherit the reference palette and material. Add richer abstract colour, light, gloss and texture detail near the top, then gradually become paler and more transparent toward the bottom. Keep the centre calm for editable gift cards."
+        : "只生成竖版直播间侧贴背景底板，不要文字、人物、商品或卡片。继承参考图的主色、材质与氛围，在顶部增加更丰富的抽象色彩、光泽与质感细节，向下逐渐变淡、透明，中央保持克制以便放置可编辑赠品卡片。";
+      const initialJob = await createBackgroundJob({ kind: "side", prompt, reference: await assetReference(generationReference) });
+      const job = await waitForJob(initialJob, fetchBackgroundJob, (_job, attempt) => {
+        if (attempt > 0 && attempt % 8 === 0) setMessage(isEnglish ? "Still generating the side background..." : "侧贴背景仍在生成中…");
+      });
+      if (job.status === "failed") throw new Error(job.error?.message || (isEnglish ? "Background generation failed." : "侧贴背景生成失败。"));
+      if (!job.result?.url) throw new Error(isEnglish ? "The task returned no image." : "任务没有返回图片。 ");
+      const asset = await onAddAsset(await resultFile(job.result, `side-background-${job.id}.jpg`), "side-background");
+      onSettingsChange({ backgroundAssetId: asset.id });
+      setMessage(isEnglish ? "Generated background applied. Copy and images remain editable." : "生成背景已应用，文字和赠品图仍可直接编辑。 ");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isEnglish ? "Unable to generate the side background." : "侧贴背景生成失败。"));
+    } finally {
+      setIsGeneratingBackground(false);
+    }
+  };
+
+  const createSideSticker = async () => {
+    setIsRendering(true);
+    setMessage(isEnglish ? "Rendering side sticker..." : "正在生成侧贴图层…");
+    try {
+      const blob = await renderSideStickerPng(settings, { talentSrc, giftOneSrc, giftTwoSrc, backgroundSrc });
+      const asset = await onAddAsset(new File([blob], `side-sticker-${settings.mode}-${Date.now()}.png`, { type: "image/png" }), "side");
+      setMessage(isEnglish ? `Added ${asset.fileName} to composition.` : "侧贴已生成，并自动写入效果融合。 ");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (isEnglish ? "Unable to render side sticker." : "侧贴生成失败。"));
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
+  return (
+    <ToolFrame eyebrow="03 / SIDE STICKER EDITOR" title={isEnglish ? "Side sticker editor" : "侧贴编辑"} detail={isEnglish ? "Edit the fixed Figma-derived layout directly. Replace copy and images, inherit the latest sticker palette, then send a transparent PNG to composition." : "基于 Figma 原型的固定模板，可直接修改文字、替换图片并继承最新贴片配色；生成后会以透明 PNG 自动进入效果融合。"}>
+      <div className="side-editor-layout">
+        <section className="side-preview-stage" aria-label={isEnglish ? "Editable side sticker preview" : "可编辑侧贴预览"}>
+          <div className="side-preview-heading"><span>FIGMA 508:3</span><small>{isEnglish ? "Click copy or an image to edit" : "点击文字或图片即可编辑"}</small></div>
+          <SideStickerPreview
+            language={language}
+            settings={settings}
+            talentSrc={talentSrc}
+            giftOneSrc={giftOneSrc}
+            giftTwoSrc={giftTwoSrc}
+            backgroundSrc={backgroundSrc}
+            onChange={onSettingsChange}
+            onReplaceTalent={() => talentInput.current?.click()}
+            onReplaceGiftOne={() => giftOneInput.current?.click()}
+            onReplaceGiftTwo={() => giftTwoInput.current?.click()}
+          />
+          <input ref={talentInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadSlot(event, "side-talent", "talentAssetId")} />
+          <input ref={giftOneInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadSlot(event, "side-gift", "giftOneAssetId")} />
+          <input ref={giftTwoInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void uploadSlot(event, "side-gift", "giftTwoAssetId")} />
+        </section>
+
+        <aside className="side-editor-controls">
+          <section>
+            <p>{isEnglish ? "TEMPLATE" : "模板"}</p>
+            <div className="side-template-switch">
+              <button className={settings.mode === "flat" ? "selected" : ""} type="button" onClick={() => onSettingsChange({ mode: "flat" })}>{isEnglish ? "Flat" : "平铺侧贴"}</button>
+              <button className={settings.mode === "talent" ? "selected" : ""} type="button" onClick={() => onSettingsChange({ mode: "talent" })}>{isEnglish ? "Talent" : "达人空降"}</button>
+            </div>
+          </section>
+          <section>
+            <div className="side-control-heading"><p>{isEnglish ? "PALETTE" : "配色"}</p><button type="button" onClick={() => void inheritPalette()}>{isEnglish ? "Inherit stickers" : "继承上贴 / 下贴"}</button></div>
+            <div className="side-color-row">
+              <label><span>{isEnglish ? "Primary" : "主色"}</span><input type="color" value={settings.primaryColor} onChange={(event) => onSettingsChange({ primaryColor: event.target.value })} /></label>
+              <label><span>{isEnglish ? "Fade" : "渐隐色"}</span><input type="color" value={settings.secondaryColor} onChange={(event) => onSettingsChange({ secondaryColor: event.target.value })} /></label>
+            </div>
+            <div className="side-background-generation">
+              <button type="button" disabled={!projectReady || !generationReference || isGeneratingBackground} onClick={() => void generateBackground()}>{isGeneratingBackground ? (isEnglish ? "Generating..." : "正在生成…") : (isEnglish ? "Generate side background from reference" : "根据参考生成侧贴背景")}</button>
+              <small>{generationReference ? (isEnglish ? `Reference: ${generationReference.fileName}` : `生图参考：${generationReference.fileName}`) : (isEnglish ? "Add a generation reference in Step 1." : "请先在第 1 步添加生图参考。")}</small>
+            </div>
+          </section>
+          <button className="side-render-action" type="button" disabled={!projectReady || isRendering} onClick={() => void createSideSticker()}>{isRendering ? (isEnglish ? "Rendering..." : "正在生成…") : (isEnglish ? "Generate and place" : "生成并置入效果融合")}</button>
+          <small className="side-editor-message">{message || (isEnglish ? "Output uses a transparent background." : "输出为透明背景 PNG，并保留当前模板设置。")}</small>
+        </aside>
+      </div>
+    </ToolFrame>
+  );
+}
+
+function SideStickerPreview({ language, settings, talentSrc, giftOneSrc, giftTwoSrc, backgroundSrc, onChange, onReplaceTalent, onReplaceGiftOne, onReplaceGiftTwo }: {
+  language: "zh" | "en";
+  settings: SideStickerSettings;
+  talentSrc: string;
+  giftOneSrc: string;
+  giftTwoSrc: string;
+  backgroundSrc?: string;
+  onChange: (settings: Partial<SideStickerSettings>) => void;
+  onReplaceTalent: () => void;
+  onReplaceGiftOne: () => void;
+  onReplaceGiftTwo: () => void;
+}) {
+  const commitText = (key: "eyebrow" | "title" | "footer" | "giftOneLabel" | "giftTwoLabel") => (event: React.FocusEvent<HTMLElement>) => onChange({ [key]: event.currentTarget.textContent?.trim() ?? "" });
+  const gradient = `linear-gradient(180deg, ${settings.primaryColor} 0%, ${hexToRgba(settings.primaryColor, .7)} 24%, ${hexToRgba(settings.secondaryColor, .4)} 82%, ${hexToRgba(settings.secondaryColor, .16)} 100%)`;
+  const generatedOverlay = `linear-gradient(180deg, ${hexToRgba(settings.primaryColor, .18)} 0%, ${hexToRgba(settings.primaryColor, .08)} 34%, ${hexToRgba(settings.secondaryColor, .44)} 100%)`;
+  const footerBackground = createVividAccent(settings.primaryColor);
+  const boardStyle = {
+    ...(backgroundSrc
+      ? { backgroundColor: settings.secondaryColor, backgroundImage: `${generatedOverlay}, url("${backgroundSrc}")`, backgroundPosition: "center", backgroundSize: "cover" }
+      : { background: gradient }),
+    "--side-heading-color": adaptiveTextColor(settings.primaryColor, settings.primaryColor),
+    "--side-card-text-color": adaptiveTextColor("#f7f8f5", settings.primaryColor),
+    "--side-footer-background": footerBackground,
+    "--side-footer-color": adaptiveTextColor(footerBackground, settings.primaryColor),
+  } as CSSProperties & Record<"--side-heading-color" | "--side-card-text-color" | "--side-footer-background" | "--side-footer-color", string>;
+  return (
+    <div className={`side-preview-viewport ${settings.mode}`}>
+      <div className={`side-sticker-art ${settings.mode}`}>
+        {settings.mode === "talent" ? <button className="side-talent-image" type="button" onClick={onReplaceTalent} title={language === "en" ? "Replace talent image" : "替换达人图"}><img src={talentSrc} alt="" /><span>{language === "en" ? "Replace" : "替换"}</span></button> : null}
+        <div className="side-sticker-board" style={boardStyle}>
+          <div className="side-sticker-copy">
+            <strong contentEditable suppressContentEditableWarning onBlur={commitText("eyebrow")}>{settings.eyebrow}</strong>
+            <b contentEditable suppressContentEditableWarning onBlur={commitText("title")}>{settings.title}</b>
+          </div>
+          <article className="side-gift-card first">
+            <button type="button" onClick={onReplaceGiftOne} title={language === "en" ? "Replace first gift image" : "替换第一张赠品图"}><img src={giftOneSrc} alt="" /><span>{language === "en" ? "Replace" : "替换"}</span></button>
+            <p contentEditable suppressContentEditableWarning onBlur={commitText("giftOneLabel")}>{settings.giftOneLabel}</p>
+          </article>
+          <article className="side-gift-card second">
+            <button type="button" onClick={onReplaceGiftTwo} title={language === "en" ? "Replace second gift image" : "替换第二张赠品图"}><img src={giftTwoSrc} alt="" /><span>{language === "en" ? "Replace" : "替换"}</span></button>
+            <p contentEditable suppressContentEditableWarning onBlur={commitText("giftTwoLabel")}>{settings.giftTwoLabel}</p>
+          </article>
+          <p className="side-footer-copy" contentEditable suppressContentEditableWarning onBlur={commitText("footer")}>{settings.footer}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -546,13 +767,33 @@ function CompositionTool({
     .map((layer) => ({ layer, asset: assets.find((asset) => asset.id === layer.assetId) }))
     .filter((item): item is { layer: CompositionLayer; asset: ProjectAsset } => Boolean(item.asset));
   const visibleCanvasLayers = canvasLayers.filter((item) => item.layer.visible);
-  const selectedLayer = visibleCanvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? visibleCanvasLayers.at(-1)?.layer;
+  const selectedLayer = canvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? visibleCanvasLayers.at(-1)?.layer ?? canvasLayers.at(-1)?.layer;
   const typographyLayer = canvasLayers.find((item) => item.layer.kind === "typography")?.layer;
   const sideLayer = canvasLayers.find((item) => item.layer.kind === "side")?.layer;
 
+  useEffect(() => {
+    const handleHistoryShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      const key = event.key.toLowerCase();
+      if (key === "z") {
+        const redo = event.shiftKey;
+        if (redo ? !canRedo : !canUndo) return;
+        event.preventDefault();
+        if (redo) onRedo(); else onUndo();
+      } else if (key === "y" && canRedo) {
+        event.preventDefault();
+        onRedo();
+      }
+    };
+    window.addEventListener("keydown", handleHistoryShortcut);
+    return () => window.removeEventListener("keydown", handleHistoryShortcut);
+  }, [canRedo, canUndo, onRedo, onUndo]);
+
   const isEnglish = language === "en";
   return (
-    <ToolFrame eyebrow="03 / COMPOSITION BOARD" title={isEnglish ? "Composition" : "效果融合"} detail={isEnglish ? "Input nodes inherit the latest upstream assets and remain magnetically attached to the output. Use the canvas for precise placement, scale and boundary fading." : "素材节点会自动继承前面工具的最新结果，也可在节点内替换。所有输入始终吸附到融合输出，画板继续用于精细位置、尺寸与遮罩调整。"}>
+    <ToolFrame eyebrow="04 / COMPOSITION BOARD" title={isEnglish ? "Composition" : "效果融合"} detail={isEnglish ? "The fixed input flow inherits the latest upstream assets. Replace any input locally, then use the canvas below for precise placement, scale and boundary fading." : "固定输入流程会自动继承前面工具的最新结果，也可在节点内选择本地图片覆盖；下方画板继续用于精细位置、尺寸与遮罩调整。"}>
       <CompositionFlow language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
       <div className="composition-workbench">
         <div className="composition-stage-wrap">
@@ -576,118 +817,74 @@ function CompositionTool({
                 if (visible) onSelectLayer(sideLayer.id);
               }}>{isEnglish ? "Place side" : "置入侧贴"}</button>
             </div>
-            <div className="history-controls">
-              <button aria-label="撤销画板操作" title="撤销" disabled={!canUndo} onClick={onUndo}>↶</button>
-              <button aria-label="恢复画板操作" title="恢复" disabled={!canRedo} onClick={onRedo}>↷</button>
-            </div>
           </div>
           <CompositionCanvas language={language} layers={canvasLayers} selectedLayer={selectedLayer} fadeActive={fadeActive} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
           <p className="stage-note">{fadeActive ? (isEnglish ? "Hover or draw inside the top or bottom sticker to reveal the content underneath. The top keeps above the line and the bottom keeps below it." : "移动到上贴或下贴区域时会临时显露下方内容；拖动画线后，上贴保留线以上、下贴保留线以下。") : (isEnglish ? "Text and side placement are independent switches. Use arrow keys for text and drag the side sticker directly." : "文字框和侧贴是独立开关：文字层用方向键定位并拖动手柄缩放，侧贴可直接拖动。")}</p>
         </div>
-        <CompositionInspector language={language} layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={visibleCanvasLayers} />
+        <CompositionInspector language={language} layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={canvasLayers} />
       </div>
     </ToolFrame>
   );
 }
 
-const compositionNodeTypes = { asset: FlowAssetNode, output: FlowOutputNode };
-const compositionEdgeTypes = { octopus: OctopusEdge };
-
 function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLayer, projectReady }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
-  const compactFlow = useMediaQuery("(max-width: 520px)");
-  const flowPositions = compactFlow ? compactFlowNodePositions : desktopFlowNodePositions;
-  const [nodes, setNodes, onNodesChange] = useNodesState([
-    { id: "base-image", type: "asset", position: flowPositions["base-image"], data: { kind: "base-image", label: "直播间底图" } },
-    { id: "top", type: "asset", position: flowPositions.top, data: { kind: "top", label: "上贴" } },
-    { id: "side", type: "asset", position: flowPositions.side, data: { kind: "side", label: "侧贴" } },
-    { id: "bottom", type: "asset", position: flowPositions.bottom, data: { kind: "bottom", label: "下贴" } },
-    { id: "typography", type: "asset", position: flowPositions.typography, data: { kind: "typography", label: "文字图层" } },
-    { id: "merge-output", type: "output", position: flowPositions["merge-output"], data: { label: "融合输出", detail: "拖入画板继续微调" } },
-  ]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([
-    "base-image", "top", "side", "bottom", "typography",
-  ].map((source) => ({ id: `${source}-merge`, source, sourceHandle: "output", target: "merge-output", targetHandle: "input", type: "octopus", animated: true })));
-
   const selectAsset = useCallback((assetId: string) => {
     const layer = composition.layers.find((item) => item.assetId === assetId);
     if (layer) onSelectLayer(layer.id);
   }, [composition.layers, onSelectLayer]);
-
-  useEffect(() => {
-    setNodes((current) => current.map((node) => {
-      if (node.id === "merge-output") return { ...node, data: { label: language === "en" ? "Merged output" : "融合输出", detail: language === "en" ? "Continue on canvas" : "拖入画板继续微调" } };
-      const data = node.data as FlowAssetNodeData;
-      const asset = [...assets].reverse().find((item) => item.kind === data.kind);
-      return { ...node, data: { ...data, language, label: flowNodeLabel(data.kind, language), asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset } };
-    }));
-  }, [assets, language, onAddAsset, projectReady, selectAsset, setNodes]);
-
-  const onConnect = useCallback((connection: Connection) => {
-    if (connection.target !== "merge-output") return;
-    setEdges((current) => addEdge({ ...connection, type: "octopus", animated: true }, current));
-  }, [setEdges]);
-
-  useEffect(() => {
-    const positions = compactFlow ? compactFlowNodePositions : desktopFlowNodePositions;
-    setNodes((current) => current.map((node) => ({ ...node, position: positions[node.id as keyof typeof positions] ?? node.position })));
-  }, [compactFlow, setNodes]);
-
-  const onNodeDragStop = useCallback((_event: unknown, node: { id: string; position: { x: number; y: number } }) => {
-    if (node.id === "merge-output") return;
-    const position = { x: Math.min(770, Math.max(10, node.position.x)), y: Math.min(150, Math.max(14, node.position.y)) };
-    setNodes((current) => current.map((item) => item.id === node.id ? { ...item, position, className: "flow-node-rebound" } : item));
-    window.setTimeout(() => setNodes((current) => current.map((item) => item.id === node.id ? { ...item, className: "" } : item)), 360);
-  }, [setNodes]);
+  const kinds: CompositionInputKind[] = ["base-image", "top", "side", "bottom", "typography"];
 
   return (
-    <div className="composition-flow-shell">
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={compositionNodeTypes}
-          edgeTypes={compositionEdgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeDragStop={onNodeDragStop}
-          fitView
-          fitViewOptions={{ padding: 0.15 }}
-          snapToGrid
-          snapGrid={compactFlow ? [8, 8] : [16, 16]}
-          nodesConnectable
-          minZoom={0.7}
-          maxZoom={1.5}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={18} size={1} color="rgba(123, 248, 156, .1)" />
-          <Controls showInteractive={false} />
-        </ReactFlow>
-      </ReactFlowProvider>
+    <div className="composition-flow-shell" aria-label={language === "en" ? "Fixed composition input flow" : "固定效果融合输入流程"}>
+      <FlowConnections />
+      <div className="composition-flow-inputs">
+        {kinds.map((kind) => {
+          const asset = [...assets].reverse().find((item) => item.kind === kind);
+          return <FlowAssetNode key={kind} data={{ kind, language, label: flowNodeLabel(kind, language), asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset }} />;
+        })}
+      </div>
+      <FlowOutputNode language={language} />
     </div>
   );
 }
 
-const desktopFlowNodePositions = {
-  "base-image": { x: 24, y: 38 },
-  top: { x: 190, y: 38 },
-  side: { x: 356, y: 38 },
-  bottom: { x: 522, y: 38 },
-  typography: { x: 688, y: 38 },
-  "merge-output": { x: 354, y: 216 },
-};
+function FlowConnections() {
+  const desktopPaths = [
+    "M100 163 C100 210 405 210 500 244",
+    "M300 163 C300 207 442 218 500 244",
+    "M500 163 C500 198 500 220 500 244",
+    "M700 163 C700 207 558 218 500 244",
+    "M900 163 C900 210 595 210 500 244",
+  ];
+  const mobilePaths = [
+    "M167 112 C167 246 420 252 500 330",
+    "M500 112 C500 198 500 250 500 330",
+    "M833 112 C833 246 580 252 500 330",
+    "M333 244 C333 284 438 291 500 330",
+    "M667 244 C667 284 562 291 500 330",
+  ];
+  const renderPaths = (paths: string[], className: string) => (
+    <g className={className}>
+      {paths.map((path, index) => (
+        <g key={path}>
+          <path className="flow-line-base" d={path} />
+          <path className="flow-line-stream" d={path} style={{ animationDelay: `${index * -.17}s` }} />
+          <circle className="flow-line-pulse" r="3.2">
+            <animateMotion dur={`${1.8 + index * .12}s`} begin={`${index * .22}s`} repeatCount="indefinite" path={path} />
+          </circle>
+        </g>
+      ))}
+    </g>
+  );
+  return (
+    <svg className="composition-flow-lines" viewBox="0 0 1000 402" preserveAspectRatio="none" aria-hidden="true">
+      {renderPaths(desktopPaths, "flow-lines-desktop")}
+      {renderPaths(mobilePaths, "flow-lines-mobile")}
+    </svg>
+  );
+}
 
-const compactFlowNodePositions = {
-  "base-image": { x: 18, y: 20 },
-  top: { x: 142, y: 20 },
-  side: { x: 266, y: 20 },
-  bottom: { x: 80, y: 142 },
-  typography: { x: 204, y: 142 },
-  "merge-output": { x: 94, y: 284 },
-};
-
-function FlowAssetNode({ data }: NodeProps) {
-  const node = data as FlowAssetNodeData;
+function FlowAssetNode({ data: node }: { data: FlowAssetNodeData }) {
   const isEnglish = node.language === "en";
   const fileInput = useRef<HTMLInputElement>(null);
   const unavailableUpload = useCallback(async () => { throw new Error(isEnglish ? "This node cannot accept an upload." : "当前节点不可上传。"); }, [isEnglish]);
@@ -704,19 +901,18 @@ function FlowAssetNode({ data }: NodeProps) {
       <span>{node.label}</span>
       {node.asset ? <img src={node.asset.previewUrl} alt="" /> : <small>{isEnglish ? "Inherit prior output" : "继承前序结果"}</small>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={node.disabled} />
-      <button className="nodrag nopan" type="button" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }} disabled={node.disabled}>{upload.message || (isEnglish ? "Choose image" : "选择图片")}</button>
-      <Handle className="flow-handle source" type="source" position={Position.Bottom} id="output" />
+      <button type="button" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }} disabled={node.disabled}>{upload.message || (isEnglish ? "Choose image" : "选择图片")}</button>
+      <span className="flow-node-port" aria-hidden="true" />
     </div>
   );
 }
 
-function FlowOutputNode({ data }: NodeProps) {
-  const output = data as { label?: string; detail?: string };
+function FlowOutputNode({ language }: { language: "zh" | "en" }) {
   return (
     <div className="flow-output-node">
-      <Handle className="flow-handle target" type="target" position={Position.Top} id="input" />
-      <span>{output.label ?? "融合输出"}</span>
-      <small>{output.detail ?? "拖入画板继续微调"}</small>
+      <span className="flow-node-port target" aria-hidden="true" />
+      <span>{language === "en" ? "Merged output" : "融合输出"}</span>
+      <small>{language === "en" ? "Continue on the canvas below" : "进入下方画板继续微调"}</small>
     </div>
   );
 }
@@ -724,11 +920,6 @@ function FlowOutputNode({ data }: NodeProps) {
 function flowNodeLabel(kind: CompositionInputKind, language: "zh" | "en") {
   if (language === "zh") return assetKindLabels[kind];
   return { "base-image": "Room background", top: "Top sticker", bottom: "Bottom sticker", side: "Side sticker", typography: "Typography" }[kind];
-}
-
-function OctopusEdge({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, style }: EdgeProps) {
-  const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, curvature: 0.42 });
-  return <BaseEdge path={path} style={{ stroke: "#7bf89c", strokeWidth: 1.5, strokeLinecap: "round", ...style }} />;
 }
 
 function CompositionCanvas({
@@ -966,10 +1157,28 @@ function CompositionInspector({
       <p>{isEnglish ? "LAYERS" : "图层"}</p>
       <div className="layer-list">
         {layers.length === 0 ? <span>{isEnglish ? "No layers" : "暂无图层"}</span> : layers.slice().sort((a, b) => b.layer.zIndex - a.layer.zIndex).map((item) => (
-          <button className={item.layer.id === layer?.id ? "layer-row selected" : "layer-row"} key={item.layer.id} onClick={() => onSelectLayer(item.layer.id)}>
-            <span>{assetLabel(item.layer.kind, language)}</span>
-            <small>{item.asset.fileName}</small>
-          </button>
+          <div className={`${item.layer.id === layer?.id ? "layer-row selected" : "layer-row"}${item.layer.visible ? "" : " hidden-layer"}`} key={item.layer.id}>
+            <button
+              className="layer-eye"
+              type="button"
+              aria-label={item.layer.visible ? (isEnglish ? `Hide ${assetLabel(item.layer.kind, language)}` : `隐藏${assetLabel(item.layer.kind, language)}`) : (isEnglish ? `Show ${assetLabel(item.layer.kind, language)}` : `显示${assetLabel(item.layer.kind, language)}`)}
+              aria-pressed={item.layer.visible}
+              title={item.layer.visible ? (isEnglish ? "Hide layer" : "隐藏图层") : (isEnglish ? "Show layer" : "显示图层")}
+              onClick={() => {
+                const visible = !item.layer.visible;
+                onBeginInteraction();
+                onUpdateLayer(item.layer.id, { visible });
+                onEndInteraction();
+                onSelectLayer(item.layer.id);
+              }}
+            >
+              <LayerEyeIcon visible={item.layer.visible} />
+            </button>
+            <button className="layer-row-main" type="button" onClick={() => onSelectLayer(item.layer.id)}>
+              <span>{assetLabel(item.layer.kind, language)}</span>
+              <small>{item.asset.fileName}</small>
+            </button>
+          </div>
         ))}
       </div>
       {layer && asset ? (
@@ -990,6 +1199,16 @@ function CompositionInspector({
         </div>
       ) : <p className="empty-copy">{isEnglish ? "Select a layer to edit its local properties." : "选择一个图层后可调整它的本地状态。"}</p>}
     </aside>
+  );
+}
+
+function LayerEyeIcon({ visible }: { visible: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.8" />
+      {!visible ? <path className="eye-slash" d="m4 4 16 16" /> : null}
+    </svg>
   );
 }
 
@@ -1118,7 +1337,7 @@ function ExportTool({ language, assets }: { language: "zh" | "en"; assets: Proje
   };
 
   return (
-    <ToolFrame eyebrow="04 / EXPORT ASSETS" title={isEnglish ? "Export assets" : "导出资产"} detail={isEnglish ? "Select project assets and export a local ZIP. Images are packed in the browser with a manifest file." : "选择项目资产后可直接导出本地 ZIP；图片会在浏览器内打包，并附带一份项目清单。"}>
+    <ToolFrame eyebrow="05 / EXPORT ASSETS" title={isEnglish ? "Export assets" : "导出资产"} detail={isEnglish ? "Select project assets and export a local ZIP. Images are packed in the browser with a manifest file." : "选择项目资产后可直接导出本地 ZIP；图片会在浏览器内打包，并附带一份项目清单。"}>
       <div className="export-list">
         {assets.length === 0 ? <p className="empty-copy">{isEnglish ? "There are no project assets to export." : "还没有可导出的项目资产。"}</p> : assets.map((asset) => {
           const selected = selectedAssetIds.has(asset.id);
@@ -1152,7 +1371,11 @@ function ExportTool({ language, assets }: { language: "zh" | "en"; assets: Proje
   );
 }
 
-type ToolProps = { assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset> };
+type ToolProps = {
+  assets: ProjectAsset[];
+  onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+  onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+};
 
 function ToolFrame({ eyebrow, title, detail, children }: { eyebrow: string; title: string; detail: string; children: React.ReactNode }) {
   return <div className="tool-panel"><p className="panel-eyebrow">{eyebrow}</p><h2>{title}</h2><p className="panel-detail">{detail}</p>{children}</div>;
@@ -1202,7 +1425,49 @@ function useImagePasteUpload({ kind, onAddAsset, disabled, onActivate }: { kind:
   };
 }
 
-function AssetUpload({ language, kind, label, help, onAddAsset, compact = false, disabled = false }: { language: "zh" | "en"; kind: ProjectAssetKind; label: string; help: string; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean }) {
+function AssetReusePicker({ language, assets, kind, onReuseAsset, disabled = false, onActivate }: { language: "zh" | "en"; assets: ProjectAsset[]; kind: ProjectAssetKind; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled?: boolean; onActivate?: () => void }) {
+  const [message, setMessage] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const reusableAssets = assets.filter((asset) => kind === "side-gift" || kind === "side-talent" ? asset.kind === kind : assetCategoryFor(asset.kind) === assetCategoryFor(kind));
+  if (!reusableAssets.length) return null;
+  const orderedAssets = [...reusableAssets].reverse();
+  const reuse = async (assetId: string) => {
+    if (!assetId || disabled) return;
+    onActivate?.();
+    try {
+      const asset = await onReuseAsset(assetId, kind);
+      setMessage(language === "en" ? `Reused ${asset.fileName}` : `已复用：${asset.fileName}`);
+      setExpanded(false);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (language === "en" ? "Unable to reuse this asset." : "无法复用该素材。"));
+    }
+  };
+  return (
+    <div className="asset-reuse" onClick={(event) => event.stopPropagation()}>
+      <span className="asset-reuse-label">{language === "en" ? `Reuse ${assetCategoryLabel(assetCategoryFor(kind), language).toLowerCase()}` : `复用已有${assetCategoryLabel(assetCategoryFor(kind), language)}`}</span>
+      <div className="asset-reuse-quick">
+        {orderedAssets.slice(0, 4).map((asset) => (
+          <button type="button" className="asset-reuse-thumb" key={asset.id} disabled={disabled} onClick={() => void reuse(asset.id)} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`}>
+            <img src={asset.previewUrl} alt={asset.fileName} />
+          </button>
+        ))}
+        {orderedAssets.length > 4 ? <button type="button" className="asset-reuse-more" disabled={disabled} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>{expanded ? (language === "en" ? "Close" : "收起") : (language === "en" ? `All ${orderedAssets.length}` : `全部 ${orderedAssets.length}`)}</button> : null}
+      </div>
+      {expanded ? <div className="asset-reuse-grid">
+        {orderedAssets.map((asset) => (
+          <button type="button" className="asset-reuse-card" key={asset.id} disabled={disabled} onClick={() => void reuse(asset.id)} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`}>
+            <img src={asset.previewUrl} alt="" />
+            <span>{assetLabel(asset.kind, language)}</span>
+            <small>{asset.fileName}</small>
+          </button>
+        ))}
+      </div> : null}
+      {message ? <small>{message}</small> : null}
+    </div>
+  );
+}
+
+function AssetUpload({ language, kind, label, help, assets, onAddAsset, onReuseAsset, compact = false, disabled = false }: { language: "zh" | "en"; kind: ProjectAssetKind; label: string; help: string; assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean }) {
   const upload = useImagePasteUpload({ kind, onAddAsset, disabled });
 
   return (
@@ -1216,11 +1481,12 @@ function AssetUpload({ language, kind, label, help, onAddAsset, compact = false,
       <small>{help}</small>
       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
       <strong>{upload.message || (disabled ? (language === "en" ? "Restoring project" : "正在恢复项目") : (language === "en" ? "Choose image" : "选择图片"))}</strong>
+      <AssetReusePicker language={language} assets={assets} kind={kind} onReuseAsset={onReuseAsset} disabled={disabled} />
     </label>
   );
 }
 
-function TypographyContentInput({ language, value, onTextChange, onAddAsset, disabled, allowLayoutReference = false }: { language: "zh" | "en"; value: string; onTextChange: (text: string) => void; onAddAsset?: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean; allowLayoutReference?: boolean }) {
+function TypographyContentInput({ language, value, onTextChange, assets = [], onAddAsset, onReuseAsset, disabled, allowLayoutReference = false }: { language: "zh" | "en"; value: string; onTextChange: (text: string) => void; assets?: ProjectAsset[]; onAddAsset?: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset?: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean; allowLayoutReference?: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const unavailableUpload = useCallback(async () => { throw new Error("当前输入框不接收图片。 "); }, []);
   const upload = useImagePasteUpload({ kind: "layout-reference", onAddAsset: onAddAsset ?? unavailableUpload, disabled: disabled || !allowLayoutReference });
@@ -1243,6 +1509,7 @@ function TypographyContentInput({ language, value, onTextChange, onAddAsset, dis
       {allowLayoutReference ? <>
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
         <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || (language === "en" ? "Choose layout text image" : "选择带布局文本图片")}</button>
+        {onReuseAsset ? <AssetReusePicker language={language} assets={assets} kind="layout-reference" onReuseAsset={onReuseAsset} disabled={disabled} /> : null}
       </> : <small className="text-input-hint">{language === "en" ? "Multiline text is supported." : "支持换行；可直接粘贴多行文本。"}</small>}
     </section>
   );
@@ -1257,7 +1524,7 @@ function TypographyInstructionInput({ language, value, onChange, disabled }: { l
   );
 }
 
-function CustomFontReferenceCard({ language, selected, disabled, onAddAsset, onActivate }: { language: "zh" | "en"; selected: boolean; disabled: boolean; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onActivate: () => void }) {
+function CustomFontReferenceCard({ language, selected, disabled, assets, onAddAsset, onReuseAsset, onActivate }: { language: "zh" | "en"; selected: boolean; disabled: boolean; assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; onActivate: () => void }) {
   const upload = useImagePasteUpload({ kind: "font-reference", onAddAsset, disabled, onActivate });
 
   return (
@@ -1272,6 +1539,7 @@ function CustomFontReferenceCard({ language, selected, disabled, onAddAsset, onA
       <strong>{language === "en" ? "Custom glyph reference" : "自定义字体字形"}</strong>
       <small>{upload.message || (language === "en" ? "Use a desaturated font image to learn glyphs and strokes." : "建议上传去色字体图，只学习字形与笔画")}</small>
       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
+      <AssetReusePicker language={language} assets={assets} kind="font-reference" onReuseAsset={onReuseAsset} disabled={disabled} onActivate={onActivate} />
     </label>
   );
 }
@@ -1291,7 +1559,7 @@ function BackgroundOutputPreview({ language, assets, runningKind, onRegenerate }
       <div className="output-preview-heading"><div><p>OUTPUT</p><h3>{isEnglish ? "Sticker output · 1080 × 1920" : "贴片输出 · 1080 × 1920"}</h3></div></div>
       <div className="background-output-stage">
         <span className="background-output-size">1080 × 1920</span>
-        {(["top", "side", "bottom"] as BackgroundKind[]).map((kind) => {
+        {(["top", "bottom"] as BackgroundKind[]).map((kind) => {
           const asset = latestAsset(assets, kind);
           const label = assetLabel(kind, language);
           return (
@@ -1331,6 +1599,218 @@ function TypographyOutputPreview({ language, assets, isCuttingOut, message, onCu
   );
 }
 
+async function renderSideStickerPng(settings: SideStickerSettings, images: { talentSrc: string; giftOneSrc: string; giftTwoSrc: string; backgroundSrc?: string }) {
+  await Promise.all([
+    document.fonts.load('700 16px "Douyin Sans"'),
+    document.fonts.load('400 20px "Alibaba PuHuiTi 3.0"'),
+    document.fonts.load('600 13px "MiSans"'),
+  ]);
+  const scale = 4;
+  const width = 154;
+  const height = settings.mode === "talent" ? 471 : 298;
+  const boardTop = settings.mode === "talent" ? 173 : 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("无法创建侧贴画布。");
+  context.scale(scale, scale);
+
+  const [talent, giftOne, giftTwo, generatedBackground] = await Promise.all([
+    loadCanvasImage(images.talentSrc),
+    loadCanvasImage(images.giftOneSrc),
+    loadCanvasImage(images.giftTwoSrc),
+    images.backgroundSrc ? loadCanvasImage(images.backgroundSrc) : Promise.resolve(undefined),
+  ]);
+  if (settings.mode === "talent") drawContainedImage(context, talent, 0, 0, 140, 175, "cover");
+
+  context.save();
+  roundedRectPath(context, 7, boardTop, 147, 298, 17.4);
+  context.clip();
+  if (generatedBackground) {
+    drawContainedImage(context, generatedBackground, 7, boardTop, 147, 298, "cover");
+    const overlay = context.createLinearGradient(0, boardTop, 0, boardTop + 298);
+    overlay.addColorStop(0, hexToRgba(settings.primaryColor, .18));
+    overlay.addColorStop(.42, hexToRgba(settings.primaryColor, .08));
+    overlay.addColorStop(1, hexToRgba(settings.secondaryColor, .44));
+    context.fillStyle = overlay;
+    context.fillRect(7, boardTop, 147, 298);
+  } else {
+    const gradient = context.createLinearGradient(0, boardTop, 0, boardTop + 298);
+    gradient.addColorStop(0, settings.primaryColor);
+    gradient.addColorStop(.24, hexToRgba(settings.primaryColor, .7));
+    gradient.addColorStop(.82, hexToRgba(settings.secondaryColor, .4));
+    gradient.addColorStop(1, hexToRgba(settings.secondaryColor, .16));
+    context.fillStyle = gradient;
+    context.fillRect(7, boardTop, 147, 298);
+  }
+  context.restore();
+
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillStyle = adaptiveTextColor(settings.primaryColor, settings.primaryColor);
+  context.font = '700 16px "Douyin Sans", "PingFang SC", sans-serif';
+  context.fillText(settings.eyebrow, 80.5, boardTop + 13, 136);
+  context.font = '400 20px "Alibaba PuHuiTi 3.0", "PingFang SC", sans-serif';
+  context.fillText(settings.title, 80.5, boardTop + 36, 130);
+
+  const cardTextColor = adaptiveTextColor("#f7f8f5", settings.primaryColor);
+  drawGiftCard(context, { x: 23, y: boardTop + 53, width: 117, height: 88, image: giftOne, imageBox: { x: 40, y: boardTop + 53, width: 79, height: 64 }, label: settings.giftOneLabel, labelY: boardTop + 128, labelColor: cardTextColor });
+  drawGiftCard(context, { x: 23, y: boardTop + 147, width: 117, height: 125, image: giftTwo, imageBox: { x: 33, y: boardTop + 159, width: 97, height: 103 }, label: settings.giftTwoLabel, labelY: boardTop + 259, labelColor: cardTextColor });
+
+  const footerBackground = createVividAccent(settings.primaryColor);
+  context.fillStyle = footerBackground;
+  roundedRectPath(context, 23, boardTop + 279, 117, 18, 9);
+  context.fill();
+  context.fillStyle = adaptiveTextColor(footerBackground, settings.primaryColor);
+  context.font = '600 12.8px "MiSans", "PingFang SC", sans-serif';
+  context.fillText(settings.footer, 81.5, boardTop + 288, 108);
+
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("无法导出侧贴 PNG。")), "image/png"));
+}
+
+function drawGiftCard(context: CanvasRenderingContext2D, options: { x: number; y: number; width: number; height: number; image: HTMLImageElement; imageBox: { x: number; y: number; width: number; height: number }; label: string; labelY: number; labelColor: string }) {
+  context.fillStyle = "rgba(255,255,255,.9)";
+  roundedRectPath(context, options.x, options.y, options.width, options.height, 9.3);
+  context.fill();
+  drawContainedImage(context, options.image, options.imageBox.x, options.imageBox.y, options.imageBox.width, options.imageBox.height, "contain");
+  context.fillStyle = options.labelColor;
+  context.font = '600 12.8px "MiSans", "PingFang SC", sans-serif';
+  context.fillText(options.label, options.x + options.width / 2, options.labelY, options.width - 10);
+}
+
+function roundedRectPath(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const r = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + r, y);
+  context.arcTo(x + width, y, x + width, y + height, r);
+  context.arcTo(x + width, y + height, x, y + height, r);
+  context.arcTo(x, y + height, x, y, r);
+  context.arcTo(x, y, x + width, y, r);
+  context.closePath();
+}
+
+async function loadCanvasImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("侧贴图片加载失败。"));
+    image.src = src;
+  });
+}
+
+function drawContainedImage(context: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number, mode: "contain" | "cover") {
+  const imageAspect = image.naturalWidth / Math.max(image.naturalHeight, 1);
+  const boxAspect = width / Math.max(height, 1);
+  const drawWidth = mode === "cover" ? (imageAspect > boxAspect ? width * (imageAspect / boxAspect) : width) : (imageAspect > boxAspect ? width : height * imageAspect);
+  const drawHeight = mode === "cover" ? (imageAspect > boxAspect ? height : height * (boxAspect / imageAspect)) : (imageAspect > boxAspect ? width / imageAspect : height);
+  context.save();
+  context.beginPath();
+  context.rect(x, y, width, height);
+  context.clip();
+  context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+  context.restore();
+}
+
+async function sampleAssetColor(blob: Blob) {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = 24;
+  canvas.height = 24;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("无法读取颜色。");
+  context.drawImage(bitmap, 0, 0, 24, 24);
+  bitmap.close();
+  const data = context.getImageData(0, 0, 24, 24).data;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let weight = 0;
+  for (let index = 0; index < data.length; index += 4) {
+    const alpha = data[index + 3] / 255;
+    if (alpha < .08) continue;
+    const saturation = Math.max(data[index], data[index + 1], data[index + 2]) - Math.min(data[index], data[index + 1], data[index + 2]);
+    const pixelWeight = alpha * (.35 + saturation / 255);
+    red += data[index] * pixelWeight;
+    green += data[index + 1] * pixelWeight;
+    blue += data[index + 2] * pixelWeight;
+    weight += pixelWeight;
+  }
+  if (!weight) return "#47cde1";
+  return rgbToHex(Math.round(red / weight), Math.round(green / weight), Math.round(blue / weight));
+}
+
+function rgbToHex(red: number, green: number, blue: number) {
+  return `#${[red, green, blue].map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mixHex(first: string, second: string, amount: number) {
+  const read = (value: string) => [1, 3, 5].map((index) => Number.parseInt(value.slice(index, index + 2), 16));
+  const a = read(first);
+  const b = read(second);
+  return rgbToHex(...a.map((value, index) => Math.round(value + (b[index] - value) * amount)) as [number, number, number]);
+}
+
+function createVividAccent(hex: string) {
+  const [red, green, blue] = readHex(hex).map((value) => value / 255);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === red) hue = ((green - blue) / delta + (green < blue ? 6 : 0)) / 6;
+    else if (max === green) hue = ((blue - red) / delta + 2) / 6;
+    else hue = ((red - green) / delta + 4) / 6;
+  }
+  const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0;
+  return hslToHex(hue, Math.max(.82, Math.min(1, saturation + .18)), Math.max(.48, Math.min(.58, lightness)));
+}
+
+function adaptiveTextColor(background: string, tone: string) {
+  const light = mixHex(tone, "#ffffff", .9);
+  const dark = mixHex(tone, "#071013", .86);
+  return contrastRatio(background, light) >= contrastRatio(background, dark) ? light : dark;
+}
+
+function contrastRatio(first: string, second: string) {
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  return (Math.max(firstLuminance, secondLuminance) + .05) / (Math.min(firstLuminance, secondLuminance) + .05);
+}
+
+function relativeLuminance(hex: string) {
+  const channels = readHex(hex).map((value) => {
+    const channel = value / 255;
+    return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+  });
+  return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+}
+
+function readHex(hex: string) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3 ? normalized.split("").map((item) => item + item).join("") : normalized;
+  return [0, 2, 4].map((index) => Number.parseInt(value.slice(index, index + 2), 16));
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const channel = (offset: number) => {
+    const value = (offset + hue * 12) % 12;
+    const chroma = saturation * Math.min(lightness, 1 - lightness);
+    return lightness - chroma * Math.max(-1, Math.min(value - 3, 9 - value, 1));
+  };
+  return rgbToHex(Math.round(channel(0) * 255), Math.round(channel(8) * 255), Math.round(channel(4) * 255));
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const value = normalized.length === 3 ? normalized.split("").map((item) => item + item).join("") : normalized;
+  const red = Number.parseInt(value.slice(0, 2), 16);
+  const green = Number.parseInt(value.slice(2, 4), 16);
+  const blue = Number.parseInt(value.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
 function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
   if (language === "zh") return assetKindLabels[kind];
   return {
@@ -1338,6 +1818,9 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
     "color-reference": "Typography colour/material reference",
     "font-reference": "Glyph reference",
     "layout-reference": "Layout text reference",
+    "side-background": "Side sticker background",
+    "side-gift": "Side sticker gift",
+    "side-talent": "Side sticker talent",
     top: "Top sticker",
     bottom: "Bottom sticker",
     side: "Side sticker",
@@ -1345,6 +1828,31 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
     typography: "Typography",
     "base-image": "Room background",
   }[kind];
+}
+
+const assetCategoryOrder = ["base-image", "top", "bottom", "side", "generation-reference", "text-reference", "side-content", "generated-typography"] as const;
+type AssetCategory = typeof assetCategoryOrder[number];
+
+function assetCategoryFor(kind: ProjectAssetKind): AssetCategory {
+  if (kind === "reference") return "generation-reference";
+  if (kind === "color-reference" || kind === "font-reference" || kind === "layout-reference") return "text-reference";
+  if (kind === "side-background" || kind === "side-gift" || kind === "side-talent") return "side-content";
+  if (kind === "typography" || kind === "typography-draft") return "generated-typography";
+  return kind;
+}
+
+function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
+  const labels: Record<AssetCategory, { zh: string; en: string }> = {
+    "base-image": { zh: "直播间底图", en: "Room backgrounds" },
+    top: { zh: "上贴", en: "Top stickers" },
+    bottom: { zh: "下贴", en: "Bottom stickers" },
+    side: { zh: "侧贴", en: "Side stickers" },
+    "generation-reference": { zh: "生图参考", en: "Generation references" },
+    "text-reference": { zh: "文字图参考", en: "Typography references" },
+    "side-content": { zh: "侧贴内容素材", en: "Side sticker content" },
+    "generated-typography": { zh: "生成的文字图层", en: "Generated typography" },
+  };
+  return labels[category][language];
 }
 
 async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en") {

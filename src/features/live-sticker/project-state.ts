@@ -12,6 +12,9 @@ export type ProjectAssetKind =
   | "color-reference"
   | "font-reference"
   | "layout-reference"
+  | "side-background"
+  | "side-gift"
+  | "side-talent"
   | "top"
   | "bottom"
   | "side"
@@ -73,6 +76,21 @@ export interface TypographySettings {
   matte: TypographyMatte;
 }
 
+export interface SideStickerSettings {
+  mode: "flat" | "talent";
+  eyebrow: string;
+  title: string;
+  footer: string;
+  giftOneLabel: string;
+  giftTwoLabel: string;
+  primaryColor: string;
+  secondaryColor: string;
+  giftOneAssetId?: string;
+  giftTwoAssetId?: string;
+  talentAssetId?: string;
+  backgroundAssetId?: string;
+}
+
 export type PersistenceState = "loading" | "saving" | "saved" | "error";
 
 interface PersistedProjectAsset extends Omit<ProjectAsset, "previewUrl"> {}
@@ -83,6 +101,7 @@ interface PersistedProject {
   assets: PersistedProjectAsset[];
   composition: CompositionDocument;
   typography: TypographySettings;
+  sideSticker?: SideStickerSettings;
   savedAt: string;
 }
 
@@ -91,6 +110,9 @@ export const assetKindLabels: Record<ProjectAssetKind, string> = {
   "color-reference": "文字颜色质感参考",
   "font-reference": "字体参考",
   "layout-reference": "布局文本参考",
+  "side-background": "侧贴背景",
+  "side-gift": "侧贴赠品图",
+  "side-talent": "侧贴达人图",
   top: "上贴",
   bottom: "下贴",
   side: "侧贴",
@@ -122,6 +144,19 @@ function createEmptyComposition(): CompositionDocument {
 
 function createDefaultTypography(): TypographySettings {
   return { fontPresetKey: "elegant-songti", text: "NOBOOK · 618 狂欢季\n重走真理诞生路", instruction: "", mode: "create", matte: "white" };
+}
+
+function createDefaultSideSticker(): SideStickerSettings {
+  return {
+    mode: "talent",
+    eyebrow: "—CEO 空降—",
+    title: "专场福利",
+    footer: "七天无理由退换",
+    giftOneLabel: "人类科学发展史",
+    giftTwoLabel: "科学彩蛋",
+    primaryColor: "#47cde1",
+    secondaryColor: "#c7daca",
+  };
 }
 
 function cloneComposition(composition: CompositionDocument): CompositionDocument {
@@ -251,6 +286,7 @@ export function useProjectWorkspace() {
   const [assets, setAssets] = useState<ProjectAsset[]>([]);
   const [composition, setComposition] = useState<CompositionDocument>(createEmptyComposition);
   const [typography, setTypography] = useState<TypographySettings>(createDefaultTypography);
+  const [sideSticker, setSideSticker] = useState<SideStickerSettings>(createDefaultSideSticker);
   const [persistenceState, setPersistenceState] = useState<PersistenceState>("loading");
   const [history, setHistory] = useState<{ past: CompositionDocument[]; future: CompositionDocument[] }>({ past: [], future: [] });
   const urls = useRef(new Set<string>());
@@ -288,6 +324,7 @@ export function useProjectWorkspace() {
         compositionRef.current = restoredComposition;
         setComposition(restoredComposition);
         setTypography({ ...createDefaultTypography(), ...project.typography, text: project.typography?.text || createDefaultTypography().text });
+        setSideSticker({ ...createDefaultSideSticker(), ...project.sideSticker });
       }
       ready.current = true;
       setPersistenceState("saved");
@@ -305,12 +342,12 @@ export function useProjectWorkspace() {
     setPersistenceState("saving");
     saveTimer.current = window.setTimeout(() => {
       const persistedAssets: PersistedProjectAsset[] = assets.map(({ previewUrl: _previewUrl, ...asset }) => asset);
-      void savePersistedProject({ schemaVersion: 1, id: CURRENT_PROJECT_KEY, assets: persistedAssets, composition, typography, savedAt: new Date().toISOString() })
+      void savePersistedProject({ schemaVersion: 1, id: CURRENT_PROJECT_KEY, assets: persistedAssets, composition, typography, sideSticker, savedAt: new Date().toISOString() })
         .then(() => setPersistenceState("saved"))
         .catch(() => setPersistenceState("error"));
     }, 220);
     return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
-  }, [assets, composition, typography]);
+  }, [assets, composition, sideSticker, typography]);
 
   const addAsset = useCallback(async (file: File, kind: ProjectAssetKind) => {
     if (!file.type.startsWith("image/")) throw new Error("请上传图片文件。");
@@ -319,14 +356,7 @@ export function useProjectWorkspace() {
     const previewUrl = URL.createObjectURL(prepared.blob);
     urls.current.add(previewUrl);
     const asset: ProjectAsset = { id: makeAssetId(), kind, source: "uploaded", fileName: file.name, mimeType: prepared.blob.type || file.type, sizeBytes: prepared.blob.size, trimmed: prepared.trimmed, previewUrl, blob: prepared.blob, createdAt: new Date().toISOString() };
-    setAssets((current) => {
-      if (kind !== "reference" && kind !== "color-reference") return [...current, asset];
-      current.filter((item) => item.kind === kind).forEach((item) => {
-        URL.revokeObjectURL(item.previewUrl);
-        urls.current.delete(item.previewUrl);
-      });
-      return [...current.filter((item) => item.kind !== kind), asset];
-    });
+    setAssets((current) => [...current, asset]);
     setComposition((current) => {
       const next = addAssetToComposition(current, asset, imageAspect);
       compositionRef.current = next;
@@ -349,6 +379,43 @@ export function useProjectWorkspace() {
       compositionRef.current = next;
       return next;
     });
+  }, []);
+
+  const reuseAsset = useCallback(async (assetId: string, kind: ProjectAssetKind) => {
+    const source = assets.find((asset) => asset.id === assetId);
+    if (!source) throw new Error("所选缓存素材已不存在。");
+    if (source.kind === kind) {
+      const imageAspect = await getImageAspect(source.blob);
+      setAssets((current) => [...current.filter((asset) => asset.id !== source.id), source]);
+      setComposition((current) => {
+        const next = addAssetToComposition(current, source, imageAspect);
+        compositionRef.current = next;
+        return next;
+      });
+      return source;
+    }
+    const file = new File([source.blob], source.fileName, { type: source.mimeType || source.blob.type || "image/png" });
+    return addAsset(file, kind);
+  }, [addAsset, assets]);
+
+  const clearAssets = useCallback(() => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    setAssets((current) => {
+      current.forEach((asset) => {
+        URL.revokeObjectURL(asset.previewUrl);
+        urls.current.delete(asset.previewUrl);
+      });
+      return [];
+    });
+    const emptyComposition = createEmptyComposition();
+    compositionRef.current = emptyComposition;
+    setComposition(emptyComposition);
+    setSideSticker(createDefaultSideSticker());
+    setHistory({ past: [], future: [] });
+  }, []);
+
+  const updateSideSticker = useCallback((patch: Partial<SideStickerSettings>) => {
+    setSideSticker((current) => ({ ...current, ...patch }));
   }, []);
 
   const selectLayer = useCallback((layerId: string) => {
@@ -411,12 +478,15 @@ export function useProjectWorkspace() {
     assets,
     composition,
     typography,
+    sideSticker,
     persistenceState,
     projectReady: persistenceState !== "loading",
     canUndo: history.past.length > 0,
     canRedo: history.future.length > 0,
     addAsset,
     removeAsset,
+    reuseAsset,
+    clearAssets,
     selectLayer,
     updateLayer,
     updateLayerMask,
@@ -425,6 +495,7 @@ export function useProjectWorkspace() {
     undoComposition,
     redoComposition,
     setTypography,
+    updateSideSticker,
   };
 }
 
