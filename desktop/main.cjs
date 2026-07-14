@@ -6,6 +6,9 @@ const projectExtension = ".my";
 const coreBaseUrl = (process.env.TASK_MAP_CORE_API_BASE_URL || "https://www.cmuyang23333.top/api").replace(/\/$/, "");
 let mainWindow;
 let launchProjectPath;
+let projectDirty = false;
+let closeDialogOpen = false;
+let allowWindowClose = false;
 
 function projectPathFromArgs(argv) {
   return argv.find((value) => typeof value === "string" && value.toLowerCase().endsWith(projectExtension));
@@ -47,7 +50,7 @@ async function chooseProjectFile() {
 }
 
 async function saveProject(input) {
-  let filePath = input.saveAs ? undefined : input.path;
+  let filePath = input.path;
   if (!filePath) {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: "保存 Task Map 项目",
@@ -76,9 +79,42 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      defaultFontFamily: {
+        standard: "Microsoft YaHei UI",
+        sansSerif: "Microsoft YaHei",
+        serif: "Microsoft YaHei",
+        monospace: "Consolas",
+      },
     },
   });
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
+  mainWindow.on("close", (event) => {
+    if (allowWindowClose || !projectDirty) return;
+    event.preventDefault();
+    if (closeDialogOpen) return;
+    closeDialogOpen = true;
+    void dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "项目尚未保存",
+      message: "当前工程还有未保存的修改。",
+      detail: "选择“不保存退出”会丢失这些修改；也可以继续编辑并先保存工程。",
+      buttons: ["继续编辑", "不保存退出"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }).then(({ response }) => {
+      closeDialogOpen = false;
+      if (response !== 1) return;
+      allowWindowClose = true;
+      mainWindow?.close();
+    });
+  });
+  mainWindow.on("closed", () => {
+    mainWindow = undefined;
+  });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "allow" }));
   void mainWindow.loadFile(path.join(__dirname, "..", "dist-desktop", "index.html"));
 }
@@ -90,6 +126,13 @@ ipcMain.handle("task-map:get-launch-project", async () => {
 });
 ipcMain.handle("task-map:open-project", chooseProjectFile);
 ipcMain.handle("task-map:save-project", (_event, input) => saveProject(input));
+ipcMain.on("task-map:set-dirty-state", (event, dirty) => {
+  if (mainWindow && event.sender === mainWindow.webContents) projectDirty = dirty === true;
+});
+ipcMain.handle("task-map:close-window", () => {
+  mainWindow?.close();
+  return true;
+});
 ipcMain.handle("task-map:export-file", async (_event, input) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "导出文件",

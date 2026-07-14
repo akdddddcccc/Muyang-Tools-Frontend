@@ -649,7 +649,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     }
   }, [isEnglish]);
 
-  const saveDesktopProject = useCallback(async (saveAs = false) => {
+  const saveDesktopProject = useCallback(async () => {
     if (!window.taskMapDesktop) return false;
     const document = createTaskMapProjectDocument(currentProjectState, projectCreatedAt);
     const rootTask = document.tasks.find((task) => !task.parentId);
@@ -657,7 +657,6 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     const result = await window.taskMapDesktop.saveProject({
       path: projectPath,
       content: JSON.stringify(document, null, 2),
-      saveAs,
       suggestedName: `${safeTitle}.my`,
     });
     if (result.canceled) return false;
@@ -716,7 +715,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       const key = event.key.toLowerCase();
       if (key === "s") {
         event.preventDefault();
-        void saveDesktopProject(event.shiftKey);
+        void saveDesktopProject();
       } else if (key === "o") {
         event.preventDefault();
         void openDesktopProject();
@@ -730,13 +729,8 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   }, [desktopMode, newDesktopProject, openDesktopProject, saveDesktopProject]);
 
   useEffect(() => {
-    if (!desktopMode || !projectDirty) return;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    if (!desktopMode || !window.taskMapDesktop) return;
+    window.taskMapDesktop.setDirtyState(projectDirty);
   }, [desktopMode, projectDirty]);
 
   const arrangeMindTree = (nextTasks: TaskNode[], focusId?: string) => {
@@ -1664,10 +1658,11 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
             <>
               <span className="task-desktop-project-name" title={projectPath}>{projectDirty ? "● " : ""}{desktopProjectName}</span>
               <div className="task-desktop-file-actions">
+                <span className="task-action-group-label">{isEnglish ? "Project" : "工程文件"}</span>
                 <button type="button" onClick={newDesktopProject}>{isEnglish ? "New" : "新建"}</button>
                 <button type="button" onClick={() => void openDesktopProject()}>{isEnglish ? "Open" : "打开"}</button>
-                <button type="button" onClick={() => void saveDesktopProject(false)}>{isEnglish ? "Save" : "保存"}</button>
-                <button type="button" onClick={() => void saveDesktopProject(true)}>{isEnglish ? "Save as" : "另存为"}</button>
+                <button type="button" onClick={() => void saveDesktopProject()}>{isEnglish ? "Save project" : "保存工程"}</button>
+                <button type="button" onClick={() => void window.taskMapDesktop?.closeWindow()}>{isEnglish ? "Exit" : "退出"}</button>
               </div>
             </>
           ) : (
@@ -1705,8 +1700,9 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
             </button>
           </nav>
           <div className="task-export-actions">
-            <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Export PDF" : "导出 PDF"}</button>
-            <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Export HTML" : "导出 HTML"}</button>
+            {desktopMode ? <span className="task-action-group-label">{isEnglish ? "Final output" : "成果导出"}</span> : null}
+            <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Export PDF" : "导出清单 PDF"}</button>
+            <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Export HTML" : "导出交互 HTML"}</button>
           </div>
         </div>
 
