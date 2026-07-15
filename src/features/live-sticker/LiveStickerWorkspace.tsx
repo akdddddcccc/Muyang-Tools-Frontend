@@ -794,6 +794,8 @@ function CompositionTool({
   projectReady: boolean;
 }) {
   const [fadeActive, setFadeActive] = useState(false);
+  const [bottomTypographyBusy, setBottomTypographyBusy] = useState(false);
+  const [bottomTypographyMessage, setBottomTypographyMessage] = useState("");
   const canvasLayers = composition.layers
     .map((layer) => ({ layer, asset: assets.find((asset) => asset.id === layer.assetId) }))
     .filter((item): item is { layer: CompositionLayer; asset: ProjectAsset } => Boolean(item.asset));
@@ -801,6 +803,7 @@ function CompositionTool({
   const selectedLayer = canvasLayers.find((item) => item.layer.id === composition.selectedLayerId)?.layer ?? visibleCanvasLayers.at(-1)?.layer ?? canvasLayers.at(-1)?.layer;
   const typographyLayer = canvasLayers.find((item) => item.layer.kind === "typography")?.layer;
   const sideLayer = canvasLayers.find((item) => item.layer.kind === "side")?.layer;
+  const bottomTypographyLayer = canvasLayers.find((item) => item.layer.kind === "bottom-typography")?.layer;
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -823,6 +826,26 @@ function CompositionTool({
   }, [canRedo, canUndo, onRedo, onUndo]);
 
   const isEnglish = language === "en";
+  const toggleBottomTypography = async () => {
+    if (bottomTypographyLayer) {
+      const visible = !bottomTypographyLayer.visible;
+      onBeginCompositionInteraction();
+      onUpdateLayer(bottomTypographyLayer.id, { visible });
+      onEndCompositionInteraction();
+      if (visible) onSelectLayer(bottomTypographyLayer.id);
+      return;
+    }
+    setBottomTypographyBusy(true);
+    setBottomTypographyMessage(isEnglish ? "Preparing the bottom typography layer…" : "正在生成下贴文字图层…");
+    try {
+      await onAddAsset(await renderBottomTypographyAsset(assets), "bottom-typography");
+      setBottomTypographyMessage(isEnglish ? "Bottom typography added at its fixed export position." : "下贴文字图层已按固定位置置入，并加入导出资产。");
+    } catch (error) {
+      setBottomTypographyMessage(error instanceof Error ? error.message : (isEnglish ? "Could not create the bottom typography layer." : "下贴文字图层生成失败。"));
+    } finally {
+      setBottomTypographyBusy(false);
+    }
+  };
   return (
     <ToolFrame eyebrow="04 / COMPOSITION BOARD" title={isEnglish ? "Composition" : "效果融合"} detail={isEnglish ? "The fixed input flow inherits the latest upstream assets. Replace any input locally, then use the canvas below for precise placement, scale and boundary fading." : "固定输入流程会自动继承前面工具的最新结果，也可在节点内选择本地图片覆盖；下方画板继续用于精细位置、尺寸与遮罩调整。"}>
       <CompositionFlow language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
@@ -847,10 +870,11 @@ function CompositionTool({
                 onEndCompositionInteraction();
                 if (visible) onSelectLayer(sideLayer.id);
               }}>{isEnglish ? "Place side" : "置入侧贴"}</button>
+              <button className={bottomTypographyLayer?.visible ? "selected" : ""} disabled={!projectReady || bottomTypographyBusy} onClick={() => void toggleBottomTypography()}>{bottomTypographyBusy ? (isEnglish ? "Preparing…" : "生成中…") : (isEnglish ? "Bottom text" : "置入底部文字")}</button>
             </div>
           </div>
           <CompositionCanvas language={language} layers={canvasLayers} selectedLayer={selectedLayer} fadeActive={fadeActive} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} />
-          <p className="stage-note">{fadeActive ? (isEnglish ? "Hover or draw inside the top or bottom sticker to reveal the content underneath. The top keeps above the line and the bottom keeps below it." : "移动到上贴或下贴区域时会临时显露下方内容；拖动画线后，上贴保留线以上、下贴保留线以下。") : (isEnglish ? "Text and side placement are independent switches. Use arrow keys for text and drag the side sticker directly." : "文字框和侧贴是独立开关：文字层用方向键定位并拖动手柄缩放，侧贴可直接拖动。")}</p>
+          <p className="stage-note">{bottomTypographyMessage || (fadeActive ? (isEnglish ? "Hover or draw inside the top or bottom sticker to reveal the content underneath. The top keeps above the line and the bottom keeps below it." : "移动到上贴或下贴区域时会临时显露下方内容；拖动画线后，上贴保留线以上、下贴保留线以下。") : (isEnglish ? "Each placement is an independent switch. Bottom text keeps its fixed size and export position." : "四项功能均为独立开关；底部文字保持固定尺寸与导出位置，不参与移动和缩放。"))}</p>
         </div>
         <CompositionInspector language={language} layer={selectedLayer} asset={selectedLayer ? assets.find((asset) => asset.id === selectedLayer.assetId) : undefined} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginInteraction={onBeginCompositionInteraction} onEndInteraction={onEndCompositionInteraction} layers={canvasLayers} />
       </div>
@@ -1150,13 +1174,13 @@ function CompositionCanvas({
             left: `${layer.x}%`, top: `${layer.y}%`, width: `${layer.width}%`, height: `${layer.height}%`, opacity: (layer.opacity / 100) * (layer.id === peekLayerId ? 0.55 : 1),
             zIndex: layer.zIndex, visibility: layer.visible ? "visible" : "hidden", ...maskStyle(layer),
           }}
-          title={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} · ${asset.fileName} · ${layer.kind === "base-image" ? (language === "en" ? "fixed 1920px height, centred without stretching" : "固定 1920 高度，等比例居中且不拉伸") : language === "en" ? (layer.kind === "side" ? "drag or use arrow keys" : "use arrow keys to position") : (layer.kind === "side" ? "可拖动或使用方向键定位" : "使用方向键定位")}`}
+          title={`${assetLabel(layer.kind, language)} · ${asset.fileName} · ${layer.kind === "base-image" ? (language === "en" ? "fixed 1920px height, centred without stretching" : "固定 1920 高度，等比例居中且不拉伸") : layer.kind === "bottom-typography" ? (language === "en" ? "auto-cropped within 724 × 150px and fixed at export position" : "在 724 × 150 px 范围内自动裁边，并锁定导出位置") : language === "en" ? (layer.kind === "side" ? "drag or use arrow keys" : "use arrow keys to position") : (layer.kind === "side" ? "可拖动或使用方向键定位" : "使用方向键定位")}`}
           role="button"
           tabIndex={0}
-          aria-label={`${language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} ${language === "en" ? "layer" : "图层"}`}
+          aria-label={`${assetLabel(layer.kind, language)} ${language === "en" ? "layer" : "图层"}`}
         >
-          <img src={asset.previewUrl} alt={language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]} draggable={false} />
-          <span>{language === "en" ? flowNodeLabel(layer.kind, "en") : assetKindLabels[layer.kind]}</span>
+          <img src={asset.previewUrl} alt={assetLabel(layer.kind, language)} draggable={false} />
+          <span>{assetLabel(layer.kind, language)}</span>
           {layer.id === selectedLayer?.id && !fadeActive && layer.kind === "typography" && layer.visible ? <i className="resize-handle" onPointerDown={(event) => onResizeDown(event, layer)} title={language === "en" ? "Drag to resize" : "拖动缩放"} /> : null}
         </div>
       ))}
@@ -1878,6 +1902,77 @@ async function sampleAssetColor(blob: Blob) {
   return rgbToHex(Math.round(red / weight), Math.round(green / weight), Math.round(blue / weight));
 }
 
+const BOTTOM_TYPOGRAPHY_TEXT = "让每个孩子拥有实验室";
+const BOTTOM_TYPOGRAPHY_FONT = '"MF BoHeHaiYan"';
+
+async function renderBottomTypographyAsset(assets: ProjectAsset[]) {
+  await document.fonts.load(`400 120px ${BOTTOM_TYPOGRAPHY_FONT}`, BOTTOM_TYPOGRAPHY_TEXT);
+  const latest = (kinds: ProjectAssetKind[]) => [...assets].reverse().find((asset) => kinds.includes(asset.kind));
+  const surfaceAsset = latest(["bottom", "base-image"]);
+  const themeAsset = latest(["top", "bottom", "reference", "side-background", "base-image"]);
+  const surfaceColor = surfaceAsset ? await sampleAssetColor(surfaceAsset.blob) : "#f2d8de";
+  const themeColor = themeAsset ? await sampleAssetColor(themeAsset.blob) : "#d44732";
+  const vividColor = mixHex(createVividAccent(themeColor), "#071013", .14);
+  const darkColor = mixHex(themeColor, "#071013", .82);
+  const whiteColor = "#ffffff";
+  const textColor = contrastRatio(surfaceColor, vividColor) >= 3
+    ? vividColor
+    : contrastRatio(surfaceColor, darkColor) >= contrastRatio(surfaceColor, whiteColor) ? darkColor : whiteColor;
+
+  const scratch = document.createElement("canvas");
+  scratch.width = 1200;
+  scratch.height = 260;
+  const context = scratch.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("无法生成下贴文字图层。");
+
+  const maximumWidth = 712;
+  const maximumHeight = 138;
+  let fontSize = 150;
+  for (; fontSize >= 24; fontSize -= 1) {
+    context.font = `400 ${fontSize}px ${BOTTOM_TYPOGRAPHY_FONT}`;
+    const metrics = context.measureText(BOTTOM_TYPOGRAPHY_TEXT);
+    const width = metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight;
+    const height = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    if (width <= maximumWidth && height <= maximumHeight) break;
+  }
+
+  context.clearRect(0, 0, scratch.width, scratch.height);
+  context.font = `400 ${fontSize}px ${BOTTOM_TYPOGRAPHY_FONT}`;
+  context.fillStyle = textColor;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(BOTTOM_TYPOGRAPHY_TEXT, scratch.width / 2, scratch.height / 2);
+  const pixels = context.getImageData(0, 0, scratch.width, scratch.height);
+  let minX = scratch.width;
+  let minY = scratch.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < scratch.height; y += 1) {
+    for (let x = 0; x < scratch.width; x += 1) {
+      if (pixels.data[(y * scratch.width + x) * 4 + 3] < 8) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  if (maxX < minX || maxY < minY) throw new Error("字体加载完成，但没有生成可见文字。");
+
+  const padding = 6;
+  const cropX = Math.max(0, minX - padding);
+  const cropY = Math.max(0, minY - padding);
+  const cropWidth = Math.min(scratch.width - cropX, maxX - cropX + 1 + padding);
+  const cropHeight = Math.min(scratch.height - cropY, maxY - cropY + 1 + padding);
+  const output = document.createElement("canvas");
+  output.width = cropWidth;
+  output.height = cropHeight;
+  const outputContext = output.getContext("2d");
+  if (!outputContext) throw new Error("无法裁剪下贴文字图层。");
+  outputContext.drawImage(scratch, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+  const blob = await new Promise<Blob>((resolve, reject) => output.toBlob((value) => value ? resolve(value) : reject(new Error("无法导出下贴文字图层 PNG。")), "image/png"));
+  return new File([blob], "下贴文字图层.png", { type: "image/png" });
+}
+
 function rgbToHex(red: number, green: number, blue: number) {
   return `#${[red, green, blue].map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`;
 }
@@ -1964,18 +2059,20 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
     side: "Side sticker",
     "typography-draft": "Typography draft",
     typography: "Typography",
+    "bottom-typography": "Bottom typography layer",
     "base-image": "Room background",
   }[kind];
 }
 
-const assetCategoryOrder = ["base-image", "top", "bottom", "side", "generation-reference", "typography-glyph-reference", "typography-color-reference", "typography-layout-reference", "side-content", "generated-typography"] as const;
+const assetCategoryOrder = ["base-image", "top", "bottom", "side", "bottom-typography", "generation-reference", "typography-glyph-reference", "typography-color-reference", "typography-layout-reference", "side-content", "generated-typography"] as const;
 type AssetCategory = typeof assetCategoryOrder[number];
 
 function isColorMaterialReferenceAsset(asset: ProjectAsset) {
   return asset.kind !== "font-reference"
     && asset.kind !== "layout-reference"
     && asset.kind !== "typography-draft"
-    && asset.kind !== "typography";
+    && asset.kind !== "typography"
+    && asset.kind !== "bottom-typography";
 }
 
 function assetCategoryFor(kind: ProjectAssetKind): AssetCategory {
@@ -1994,6 +2091,7 @@ function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
     top: { zh: "上贴", en: "Top stickers" },
     bottom: { zh: "下贴", en: "Bottom stickers" },
     side: { zh: "侧贴", en: "Side stickers" },
+    "bottom-typography": { zh: "下贴文字图层", en: "Bottom typography layers" },
     "generation-reference": { zh: "生图参考", en: "Generation references" },
     "typography-glyph-reference": { zh: "文字字形参考", en: "Typography glyph references" },
     "typography-color-reference": { zh: "文字颜色质感参考", en: "Typography colour / material references" },
@@ -2007,7 +2105,7 @@ function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
 async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en") {
   const usedNames = new Map<string, number>();
   const files = await Promise.all(assets.map(async (asset, index) => ({
-    name: uniqueZipName(`${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${asset.fileName || asset.kind}.${extensionForAsset(asset)}`, usedNames),
+    name: uniqueZipName(asset.kind === "bottom-typography" ? "下贴文字图层.png" : `${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${asset.fileName || asset.kind}.${extensionForAsset(asset)}`, usedNames),
     bytes: new Uint8Array(await asset.blob.arrayBuffer()),
   })));
   const manifest = {

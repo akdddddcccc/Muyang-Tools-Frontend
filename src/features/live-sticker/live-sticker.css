@@ -1,6 +1,7 @@
 @font-face { font-family: "MiSans"; src: url("../../assets/fonts/MiSans-Demibold.ttf") format("truetype"); font-style: normal; font-weight: 600; font-display: swap; }
 @font-face { font-family: "Douyin Sans"; src: url("../../assets/fonts/DouyinSansBold.otf") format("opentype"); font-style: normal; font-weight: 700; font-display: swap; }
 @font-face { font-family: "Alibaba PuHuiTi 3.0"; src: url("../../assets/fonts/AlibabaPuHuiTi-3-55-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
+@font-face { font-family: "MF BoHeHaiYan"; src: url("../../assets/fonts/MFBoHeHaiYan-Regular.ttf") format("truetype"); font-style: normal; font-weight: 400; font-display: swap; }
 .workspace-shell { min-height: 100vh; color: #edf4ef; background: #0b1015; }
 .workspace-header { min-height: 72px; display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 12px 24px; border-bottom: 1px solid #26313a; background: rgba(11, 16, 21, .96); }
 .brand-lockup, .header-controls { display: flex; align-items: center; gap: 12px; }
@@ -262,9 +263,10 @@
 .flow-output-node > .flow-node-port.target { top: -6px; bottom: auto; }
 .composition-workbench { display: grid; grid-template-columns: minmax(260px, 1fr) 250px; gap: 16px; margin-top: 20px; }
 .composition-stage-wrap { min-width: 0; }
-.composition-toolbar { display: flex; align-items: center; justify-content: center; gap: 10px; max-width: 430px; margin: 0 auto 10px; }
+.composition-toolbar { display: flex; align-items: center; justify-content: center; gap: 10px; max-width: 540px; margin: 0 auto 10px; }
 .canvas-mode-switch { display: inline-flex; overflow: hidden; border: 1px solid #2d3a43; border-radius: 5px; }
-.canvas-mode-switch button { padding: 7px 10px; color: #9aafa4; background: transparent; border: 0; cursor: pointer; font-size: 11px; }
+.canvas-mode-switch button { padding: 7px 10px; color: #9aafa4; background: transparent; border: 0; cursor: pointer; font-size: 11px; white-space: nowrap; }
+.canvas-mode-switch button + button { border-left: 1px solid #2d3a43; }
 .canvas-mode-switch button.selected { color: #07100a; background: #7bf89c; }
 .canvas-mode-switch button:disabled { color: #526159; cursor: not-allowed; }
 .composition-stage { position: relative; width: min(100%, 430px); aspect-ratio: 9 / 16; overflow: hidden; margin: 0 auto; border: 1px solid #3c4e58; border-radius: 7px; background-color: #111a21; background-image: linear-gradient(45deg, rgba(255,255,255,.04) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,.04) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,.04) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,.04) 75%); background-position: 0 0, 0 10px, 10px -10px, -10px 0; background-size: 20px 20px; }
@@ -416,6 +418,7 @@
   .tool-panel h2 { font-size: 28px; }
   .typography-mode-switch, .matte-switcher, .canvas-mode-switch { display: grid; grid-auto-flow: column; width: 100%; }
   .typography-mode-switch button, .matte-switcher button, .canvas-mode-switch button { min-width: 0; }
+  .canvas-mode-switch button { padding-inline: 5px; font-size: 9px; }
   .font-preset-grid { grid-template-columns: 1fr; }
   .background-output-stage { width: min(100%, 320px); }
   .background-output-slot.side { width: 31%; }

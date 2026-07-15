@@ -20,9 +20,10 @@ export type ProjectAssetKind =
   | "side"
   | "typography-draft"
   | "typography"
+  | "bottom-typography"
   | "base-image";
 
-export type CompositionLayerKind = Extract<ProjectAssetKind, "top" | "bottom" | "side" | "typography" | "base-image">;
+export type CompositionLayerKind = Extract<ProjectAssetKind, "top" | "bottom" | "side" | "typography" | "bottom-typography" | "base-image">;
 export type TypographyPresetKey = "elegant-songti" | "expressive-calligraphy" | "rounded-cute" | "custom-reference";
 export type TypographyMode = "create" | "refine";
 export type TypographyMatte = "white" | "black";
@@ -118,16 +119,18 @@ export const assetKindLabels: Record<ProjectAssetKind, string> = {
   side: "侧贴",
   "typography-draft": "文字实底稿",
   typography: "文字图层",
+  "bottom-typography": "下贴文字图层",
   "base-image": "直播间底图",
 };
 
-const composableKinds = new Set<CompositionLayerKind>(["base-image", "top", "bottom", "side", "typography"]);
+const composableKinds = new Set<CompositionLayerKind>(["base-image", "top", "bottom", "side", "typography", "bottom-typography"]);
 const defaultLayerGeometry: Record<CompositionLayerKind, Omit<CompositionLayer, "id" | "assetId" | "kind" | "mask">> = {
   "base-image": { x: 0, y: 0, width: 100, height: 100, opacity: 100, visible: true, zIndex: 0 },
   top: { x: 0, y: 0, width: 100, height: 22, opacity: 100, visible: true, zIndex: 20 },
   bottom: { x: 0, y: 80, width: 100, height: 20, opacity: 100, visible: true, zIndex: 20 },
   side: { x: 84, y: 24, width: 16, height: 56, opacity: 100, visible: false, zIndex: 30 },
   typography: { x: 10, y: 40, width: 80, height: 14, opacity: 100, visible: false, zIndex: 40 },
+  "bottom-typography": { x: 16.4815, y: 89.6875, width: 67.037, height: 7.8125, opacity: 100, visible: true, zIndex: 50 },
 };
 
 function makeAssetId() {
@@ -183,7 +186,7 @@ function isCompositionLayerKind(kind: ProjectAssetKind): kind is CompositionLaye
 
 function normalizeLayer(layer: CompositionLayer): CompositionLayer {
   if (layer.kind === "base-image") {
-    return { ...layer, ...defaultLayerGeometry["base-image"], opacity: clamp(layer.opacity, 0, 100), visible: layer.visible };
+    return { ...layer, ...defaultLayerGeometry[layer.kind], opacity: clamp(layer.opacity, 0, 100), visible: layer.visible };
   }
   const width = clamp(layer.width, 1, 100);
   const height = clamp(layer.height, 1, 100);
@@ -198,6 +201,12 @@ function initialLayerGeometry(kind: CompositionLayerKind, imageAspect: number) {
   if (kind === "base-image") return defaultLayerGeometry[kind];
   const stageAspect = 9 / 16;
   const heightFor = (width: number, min: number, max: number) => clamp((width * stageAspect) / Math.max(imageAspect, 0.08), min, max);
+
+  if (kind === "bottom-typography") {
+    const width = 67.037;
+    const height = heightFor(width, 3, 12);
+    return { ...defaultLayerGeometry[kind], x: (100 - width) / 2, y: 97.5 - height, width, height };
+  }
 
   if (kind === "top") {
     const height = heightFor(100, 4, 100);
