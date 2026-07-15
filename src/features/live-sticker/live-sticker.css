@@ -47,7 +47,8 @@
 .asset-group-heading strong { overflow: hidden; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .asset-group-heading span { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; color: #7bf89c; font-size: 9px; border: 1px solid #347344; border-radius: 9px; }
 .asset-chips { display: flex; flex: 1; flex-wrap: wrap; gap: 4px; }
-.asset-chip { position: relative; display: inline-grid; flex: 0 0 38px; place-items: center; width: 38px; height: 38px; padding: 3px; border: 1px solid #2d3a43; border-radius: 5px; background: #111a21; }
+.asset-chip { position: relative; display: inline-grid; flex: 0 0 38px; place-items: center; width: 38px; height: 38px; padding: 3px; border: 1px solid #2d3a43; border-radius: 5px; background: #111a21; cursor: grab; }
+.asset-chip:active { cursor: grabbing; }
 .asset-chip img { width: 30px; height: 30px; object-fit: cover; border-radius: 3px; }
 .asset-chip span, .asset-chip em { display: none; }
 .asset-chip button { position: absolute; z-index: 2; top: -6px; right: -6px; width: 17px; height: 17px; padding: 0; color: #dce9e0; background: #26343b; border: 1px solid #53636d; border-radius: 50%; cursor: pointer; font-size: 13px; line-height: 14px; opacity: 0; transition: opacity .15s; }
@@ -60,14 +61,28 @@
 .panel-detail { max-width: 680px; margin: 14px 0 28px; color: #aabbb0; line-height: 1.7; }
 .tool-grid { display: grid; gap: 12px; margin-bottom: 18px; }
 .tool-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.asset-upload { display: flex; flex-direction: column; min-height: 180px; padding: 18px; border: 1px dashed #4b6670; border-radius: 7px; background: #101a20; cursor: pointer; }
+.asset-upload { display: flex; flex-direction: column; min-height: 180px; padding: 18px; border: 1px dashed #4b6670; border-radius: 7px; background: #101a20; }
 .asset-upload:hover { border-color: #7bf89c; background: #102217; }
-.asset-upload.paste-ready, .font-preset-card.paste-ready { border-color: #7bf89c; background: #102217; box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .22); }
+.asset-upload.paste-ready, .asset-upload.drop-ready, .font-preset-card.paste-ready, .font-preset-card.drop-ready, .typography-content-input.drop-ready { border-color: #7bf89c; background: #102217; box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .22); }
 .asset-upload.disabled { cursor: wait; opacity: .6; }
 .asset-upload > span { color: #edf4ef; font-size: 14px; font-weight: 650; }
 .asset-upload small { margin-top: 7px; color: #89a195; font-size: 12px; line-height: 1.55; }
 .asset-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
-.asset-upload strong { margin-top: auto; color: #7bf89c; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-upload-actions { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 12px; }
+.asset-upload-actions button { padding: 0; color: #7bf89c; font-size: 12px; background: transparent; border: 0; cursor: pointer; }
+.asset-upload-actions button.subtle { color: #89a195; }
+.asset-upload-actions button:disabled { cursor: wait; opacity: .55; }
+.asset-upload.has-selection { justify-content: center; padding: 12px; background: #111a21; border-style: solid; }
+.asset-upload-selection { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 118px; }
+.asset-upload-selection > img { display: block; width: 92px; height: 92px; object-fit: cover; background: #0b1217; border: 1px solid #34454e; border-radius: 5px; }
+.asset-upload-selection > div { display: flex; min-width: 0; flex-direction: column; }
+.asset-upload-selection span { color: #7bf89c; font-size: 10px; letter-spacing: .04em; }
+.asset-upload-selection strong { overflow: hidden; margin-top: 7px; color: #edf4ef; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.asset-upload-selection small { overflow: hidden; margin-top: 5px; color: #89a195; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.asset-upload-selection button { align-self: center; padding: 6px 8px; color: #9fb7aa; font-size: 10px; background: transparent; border: 1px solid #3a4852; border-radius: 4px; cursor: pointer; }
+.asset-upload-selection button:hover { color: #7bf89c; border-color: #7bf89c; }
+.asset-upload-selection button:disabled { cursor: wait; opacity: .55; }
+.asset-drop-message { color: #7bf89c !important; }
 .asset-reuse { width: 100%; margin-top: 9px; }
 .asset-reuse-label { display: block; margin-bottom: 6px; color: #89a195; font-size: 10px; line-height: 1.4; }
 .asset-reuse-quick { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -239,7 +254,7 @@
 .flow-line-pulse { fill: #d8ffe2; filter: drop-shadow(0 0 5px #7bf89c); }
 @keyframes flow-data-travel { to { stroke-dashoffset: -19; } }
 .flow-asset-node { position: relative; display: flex; flex-direction: column; justify-self: center; width: min(132px, calc(100% - 14px)); min-height: 106px; padding: 13px; color: #d7e7dc; border: 1px dashed #4b6670; border-radius: 6px; background: #101a20; box-shadow: 0 10px 22px rgba(0, 0, 0, .18); transition: border-color .2s, background .2s, box-shadow .2s; }
-.flow-asset-node:hover, .flow-asset-node.paste-ready { border-color: #7bf89c; background: #14261b; }
+.flow-asset-node:hover, .flow-asset-node.paste-ready, .flow-asset-node.drop-ready { border-color: #7bf89c; background: #14261b; }
 .flow-asset-node > span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .flow-asset-node > small { flex: 1; margin-top: 8px; color: #72877d; font-size: 10px; }
 .flow-asset-node > img { width: 100%; height: 42px; margin: 7px 0; object-fit: cover; border: 1px solid #2d3a43; border-radius: 3px; }
@@ -401,6 +416,9 @@
   .tool-nav { flex-basis: 128px; }
   .tool-nav small { display: none; }
   .asset-chip { flex-basis: 38px; }
+  .asset-upload-selection { grid-template-columns: 72px minmax(0, 1fr); }
+  .asset-upload-selection > img { width: 72px; height: 72px; }
+  .asset-upload-selection button { grid-column: 1 / -1; width: 100%; }
   .tool-panel h2 { font-size: 28px; }
   .typography-mode-switch, .matte-switcher, .canvas-mode-switch { display: grid; grid-auto-flow: column; width: 100%; }
   .typography-mode-switch button, .matte-switcher button, .canvas-mode-switch button { min-width: 0; }

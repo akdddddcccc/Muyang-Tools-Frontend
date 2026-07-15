@@ -1,4 +1,4 @@
-import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent } from "react";
 import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchBackgroundJob, fetchCoreHealth, fetchTypographyJob, getCoreBaseUrl, type BackgroundGenerationJob, type BackgroundKind, type CoreHealth, type ImageReferenceInput, type TypographyGenerationJob } from "../../lib/core-api";
 import {
   assetKindLabels,
@@ -18,13 +18,16 @@ import "./live-sticker.css";
 type ToolId = "background" | "typography" | "side-editor" | "composition" | "exports";
 type HealthState = "checking" | "online" | "offline";
 type CompositionInputKind = "base-image" | "top" | "bottom" | "side" | "typography";
+const PROJECT_ASSET_DRAG_TYPE = "application/x-muyang-project-asset";
 type FlowAssetNodeData = {
   kind: CompositionInputKind;
   label: string;
   language?: "zh" | "en";
+  assets?: ProjectAsset[];
   asset?: ProjectAsset;
   disabled?: boolean;
   onAddAsset?: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+  onReuseAsset?: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>;
   onSelectAsset?: (assetId: string) => void;
 };
 
@@ -249,11 +252,21 @@ function AssetRail({ language, assets, onRemove, onClear, persistenceState }: { 
               </div>
               <div className="asset-chips">
                 {visibleAssets.map((asset) => (
-                  <div className="asset-chip" key={asset.id} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`}>
+                  <div
+                    className="asset-chip"
+                    key={asset.id}
+                    draggable
+                    title={`${assetLabel(asset.kind, language)} · ${asset.fileName} · ${isEnglish ? "Drag to a compatible image input" : "可拖到兼容的图片输入框"}`}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "copy";
+                      event.dataTransfer.setData(PROJECT_ASSET_DRAG_TYPE, asset.id);
+                      event.dataTransfer.setData("text/plain", asset.id);
+                    }}
+                  >
                     <img alt="" src={asset.previewUrl} />
                     <span>{assetLabel(asset.kind, language)} · {asset.fileName}</span>
                     {asset.trimmed ? <em>{isEnglish ? "trimmed" : "已预剪裁"}</em> : null}
-                    <button aria-label={isEnglish ? `Remove ${asset.fileName}` : `移除 ${asset.fileName}`} onClick={() => onRemove(asset.id)}>×</button>
+                    <button draggable={false} aria-label={isEnglish ? `Remove ${asset.fileName}` : `移除 ${asset.fileName}`} onClick={() => onRemove(asset.id)}>×</button>
                   </div>
                 ))}
                 {hiddenCount > 0 ? <button className="asset-group-more" type="button" aria-expanded={expanded} onClick={() => setExpandedGroups((current) => ({ ...current, [group.category]: !expanded }))}>{expanded ? (isEnglish ? "Collapse" : "收起") : (isEnglish ? `… ${hiddenCount} more` : `… 还有 ${hiddenCount} 个`)}</button> : null}
@@ -410,10 +423,9 @@ function BackgroundTool({ language, assets, onAddAsset, onReuseAsset, health, pr
 
 function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectReady, typography, onTypographyChange }: ToolProps & { language: "zh" | "en"; projectReady: boolean; typography: TypographySettings; onTypographyChange: (settings: Partial<TypographySettings>) => void }) {
   const topAsset = latestAsset(assets, "top");
-  const projectReference = latestAsset(assets, "reference");
   const isRefineMode = typography.mode === "refine";
   const customColorReference = latestAsset(assets, "color-reference");
-  const activeColorReference = customColorReference ?? (isRefineMode ? undefined : topAsset ?? projectReference);
+  const activeColorReference = customColorReference ?? topAsset;
   const isEnglish = language === "en";
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCuttingOut, setIsCuttingOut] = useState(false);
@@ -473,7 +485,7 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
   };
 
   return (
-    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer's lettering, colour and texture. An optional colour reference overrides its visual treatment. Cutout is a separate output action." : "沿用已有文字图层的字形、颜色与纹理，可用新的色彩质感参考覆盖其视觉风格；透明抠图在产出预览中单独执行。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless an optional colour reference overrides it." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可由用户上传色彩纹理参考覆盖。")}>
+    <ToolFrame eyebrow="02 / TYPOGRAPHY LAYER" title={isEnglish ? "Typography" : "文字图层"} detail={isRefineMode ? (isEnglish ? "Reuse an existing layer for lettering only. Colour and material still follow the latest top sticker or another non-text reference." : "已有文字图层只提供字形；颜色与质感仍继承最新上贴，或改用其他非文字参考。") : (isEnglish ? "Use independently. The latest top sticker supplies colour, material and ornaments unless a custom non-text reference is selected." : "该工具可独立使用。默认继承项目上贴的色彩、材质与装饰，也可改用其他非文字参考。")}>
       <div className="typography-mode-switch" role="tablist" aria-label={isEnglish ? "Typography mode" : "文字图层模式"}>
         <button type="button" role="tab" aria-selected={!isRefineMode} className={!isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "create" })}>{isEnglish ? "Create new" : "新建文字图层"}</button>
         <button type="button" role="tab" aria-selected={isRefineMode} className={isRefineMode ? "selected" : ""} onClick={() => onTypographyChange({ mode: "refine" })}>{isEnglish ? "Refine existing" : "微调已有文字层"}</button>
@@ -482,8 +494,8 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
         <>
           <div className="tool-grid typography-refine-grid">
             <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} disabled={!projectReady} />
-            <AssetUpload language={language} kind="typography" label={isEnglish ? "Existing text layer" : "已有文字图层"} help={isEnglish ? "Upload transparent or solid text art to learn its lettering, font, colour and texture." : "上传透明或实底文字图；它会学习字形、字体、颜色与纹理。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
-            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Colour/material override" : "颜色与质感覆盖参考"} help={isEnglish ? "Optional. When present it takes priority for colour, material and ornaments." : "非必填；上传后优先采用此图的颜色、材质与装饰。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="typography" label={isEnglish ? "Existing text layer" : "已有文字图层"} help={isEnglish ? "Upload transparent or solid text art for glyph shape and lettering only; it will not define colour or material." : "上传透明或实底文字图，只学习字形与笔画，不继承其颜色和质感。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Colour/material reference" : "颜色与质感参考"} help={isEnglish ? "The latest top sticker is used by default. Otherwise choose a non-text image asset or upload a custom reference." : "默认继承最新上贴；没有上贴时，可选择非文字图片资产或上传自定义参考。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} reuseAssetFilter={isColorMaterialReferenceAsset} reuseLabel={isEnglish ? "Reuse non-text image" : "复用非文字图片"} selectedAsset={activeColorReference} disabled={!projectReady} />
           </div>
           <div className="typography-matte-row">
             <div><strong>{isEnglish ? "Draft background" : "生成底稿"}</strong><small>{isEnglish ? "A solid matte makes the next automatic cutout reliable." : "输出为实底文字图，便于下一步自动抠图。"}</small></div>
@@ -497,7 +509,7 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
         <>
           <div className="tool-grid two typography-input-grid">
             <TypographyContentInput language={language} value={typography.text} onTextChange={(text) => onTypographyChange({ text })} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} allowLayoutReference />
-            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "Overrides the top sticker. Otherwise the latest top sticker is inherited." : "上传后覆盖上贴；未上传时自动继承当前项目上贴。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} disabled={!projectReady} />
+            <AssetUpload language={language} kind="color-reference" label={isEnglish ? "Text colour/material reference" : "文字颜色与质感参考"} help={isEnglish ? "The latest top sticker is used by default. Otherwise choose a non-text image asset or upload a custom reference." : "默认继承最新上贴；没有上贴时，可选择非文字图片资产或上传自定义参考。"} assets={assets} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} reuseAssetFilter={isColorMaterialReferenceAsset} reuseLabel={isEnglish ? "Reuse non-text image" : "复用非文字图片"} selectedAsset={activeColorReference} disabled={!projectReady} />
           </div>
           <TypographyInstructionInput language={language} value={typography.instruction} onChange={(instruction) => onTypographyChange({ instruction })} disabled={!projectReady} />
           <section className="font-preset-section" aria-label={isEnglish ? "Default generation fonts" : "默认生图字体"}>
@@ -528,10 +540,10 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
       <StatusCard
         title={isEnglish ? "Active colour source" : "当前色彩参考"}
         value={activeColorReference ? `${assetLabel(activeColorReference.kind, language)} · ${activeColorReference.fileName}` : (isEnglish ? "Not selected" : "尚未选择")}
-        detail={isRefineMode ? (activeColorReference ? (isEnglish ? "The uploaded colour/material reference has priority." : "上传的颜色质感参考优先；未上传时沿用已有文字图层的颜色、纹理与字体。") : (isEnglish ? "Without an override, the existing text layer supplies lettering, colour and texture." : "未上传覆盖参考时，系统只沿用已有文字图层的字形、颜色和纹理。")) : (activeColorReference ? (isEnglish ? "This reference sets colour, material and ornaments. Glyph references do not override it." : "当前参考决定文字的颜色、质感与小装饰；字体字形参考不会覆盖它。") : (isEnglish ? "The latest top sticker is inherited when available; upload an override any time." : "尚未上传时会自动继承当前项目上贴；也可在右侧单独上传覆盖。"))}
+        detail={activeColorReference ? (isEnglish ? "This non-text reference sets colour, material and ornaments. Glyph references only guide lettering." : "当前非文字参考决定颜色、质感与小装饰；字体参考只约束字形。") : (isEnglish ? "Generate or select a top sticker, choose another non-text asset, or upload a custom reference." : "请先生成或选择上贴，也可改用其他非文字图片资产或上传自定义参考。")}
       />
       <div className="generation-action-row">
-        <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || (!typography.text.trim() && !latestAsset(assets, "layout-reference")) || (isRefineMode && !latestAsset(assets, "typography"))}>
+        <button type="button" onClick={() => void generateTypography()} disabled={!projectReady || isGenerating || !activeColorReference || (!typography.text.trim() && !latestAsset(assets, "layout-reference")) || (isRefineMode && !latestAsset(assets, "typography"))}>
           {isGenerating ? (isEnglish ? "Generating..." : "正在生成…") : isRefineMode ? (isEnglish ? "Refine with OFOX" : "使用 OFOX 微调文字图层") : (isEnglish ? "Generate with OFOX" : "使用 OFOX 生成文字图层")}
         </button>
         <p>{generationMessage || (isRefineMode ? (isEnglish ? "Upload an existing typography layer, enter replacement text, then refine it." : "上传已有文字层并填写替换文本后即可微调。") : (isEnglish ? "The editable text above is generated as a solid-matte draft first." : "上方文本可直接复制或修改；生成后先得到实底文字稿。"))}</p>
@@ -754,6 +766,7 @@ function CompositionTool({
   assets,
   composition,
   onAddAsset,
+  onReuseAsset,
   onSelectLayer,
   onUpdateLayer,
   onUpdateLayerMask,
@@ -810,7 +823,7 @@ function CompositionTool({
   const isEnglish = language === "en";
   return (
     <ToolFrame eyebrow="04 / COMPOSITION BOARD" title={isEnglish ? "Composition" : "效果融合"} detail={isEnglish ? "The fixed input flow inherits the latest upstream assets. Replace any input locally, then use the canvas below for precise placement, scale and boundary fading." : "固定输入流程会自动继承前面工具的最新结果，也可在节点内选择本地图片覆盖；下方画板继续用于精细位置、尺寸与遮罩调整。"}>
-      <CompositionFlow language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
+      <CompositionFlow language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} projectReady={projectReady} />
       <div className="composition-workbench">
         <div className="composition-stage-wrap">
           <div className="composition-toolbar">
@@ -843,7 +856,7 @@ function CompositionTool({
   );
 }
 
-function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLayer, projectReady }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
+function CompositionFlow({ language, assets, composition, onAddAsset, onReuseAsset, onSelectLayer, projectReady }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; onSelectLayer: (layerId: string) => void; projectReady: boolean }) {
   const selectAsset = useCallback((assetId: string) => {
     const layer = composition.layers.find((item) => item.assetId === assetId);
     if (layer) onSelectLayer(layer.id);
@@ -856,7 +869,7 @@ function CompositionFlow({ language, assets, composition, onAddAsset, onSelectLa
       <div className="composition-flow-inputs">
         {kinds.map((kind) => {
           const asset = [...assets].reverse().find((item) => item.kind === kind);
-          return <FlowAssetNode key={kind} data={{ kind, language, label: flowNodeLabel(kind, language), asset, disabled: !projectReady, onAddAsset, onSelectAsset: selectAsset }} />;
+          return <FlowAssetNode key={kind} data={{ kind, language, label: flowNodeLabel(kind, language), assets, asset, disabled: !projectReady, onAddAsset, onReuseAsset, onSelectAsset: selectAsset }} />;
         })}
       </div>
       <FlowOutputNode language={language} />
@@ -905,19 +918,23 @@ function FlowAssetNode({ data: node }: { data: FlowAssetNodeData }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const unavailableUpload = useCallback(async () => { throw new Error(isEnglish ? "This node cannot accept an upload." : "当前节点不可上传。"); }, [isEnglish]);
   const upload = useImagePasteUpload({ kind: node.kind, onAddAsset: node.onAddAsset ?? unavailableUpload, disabled: Boolean(node.disabled || !node.onAddAsset) });
+  const drop = useProjectAssetDrop({ language: node.language ?? "zh", assets: node.assets ?? [], kind: node.kind, onReuseAsset: node.onReuseAsset, disabled: Boolean(node.disabled || !node.onReuseAsset) });
 
   return (
     <div
-      className={`flow-asset-node${upload.isPasteTarget ? " paste-ready" : ""}`}
-      title={isEnglish ? "Hover and press Ctrl / Cmd + V to paste an image" : "悬停后可按 Ctrl / Cmd + V 粘贴图片"}
+      className={`flow-asset-node${upload.isPasteTarget ? " paste-ready" : ""}${drop.isDragTarget ? " drop-ready" : ""}`}
+      title={isEnglish ? "Paste an image, or drag a compatible project asset here" : "可粘贴图片，也可拖入兼容的项目资产"}
       onPointerEnter={upload.onPointerEnter}
       onPointerLeave={upload.onPointerLeave}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={(event) => void drop.onDrop(event)}
       onClick={() => node.asset && node.onSelectAsset?.(node.asset.id)}
     >
       <span>{node.label}</span>
       {node.asset ? <img src={node.asset.previewUrl} alt="" /> : <small>{isEnglish ? "Inherit prior output" : "继承前序结果"}</small>}
       <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={node.disabled} />
-      <button type="button" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }} disabled={node.disabled}>{upload.message || (isEnglish ? "Choose image" : "选择图片")}</button>
+      <button type="button" onClick={(event) => { event.stopPropagation(); fileInput.current?.click(); }} disabled={node.disabled}>{upload.message || drop.message || (isEnglish ? "Choose image" : "选择图片")}</button>
       <span className="flow-node-port" aria-hidden="true" />
     </div>
   );
@@ -1441,10 +1458,55 @@ function useImagePasteUpload({ kind, onAddAsset, disabled, onActivate }: { kind:
   };
 }
 
-function AssetReusePicker({ language, assets, kind, onReuseAsset, disabled = false, onActivate }: { language: "zh" | "en"; assets: ProjectAsset[]; kind: ProjectAssetKind; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled?: boolean; onActivate?: () => void }) {
+function defaultReuseAssetFilter(asset: ProjectAsset, kind: ProjectAssetKind) {
+  return kind === "side-gift" || kind === "side-talent"
+    ? asset.kind === kind
+    : assetCategoryFor(asset.kind) === assetCategoryFor(kind);
+}
+
+function useProjectAssetDrop({ language, assets, kind, onReuseAsset, disabled, onActivate, onSelected }: { language: "zh" | "en"; assets: ProjectAsset[]; kind: ProjectAssetKind; onReuseAsset?: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled: boolean; onActivate?: () => void; onSelected?: (asset: ProjectAsset) => void }) {
+  const [isDragTarget, setIsDragTarget] = useState(false);
+  const [message, setMessage] = useState("");
+  const hasProjectAsset = (event: ReactDragEvent<HTMLElement>) => Array.from(event.dataTransfer.types).includes(PROJECT_ASSET_DRAG_TYPE);
+  const onDragOver = (event: ReactDragEvent<HTMLElement>) => {
+    if (disabled || !onReuseAsset || !hasProjectAsset(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragTarget(true);
+  };
+  const onDragLeave = (event: ReactDragEvent<HTMLElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setIsDragTarget(false);
+  };
+  const onDrop = async (event: ReactDragEvent<HTMLElement>) => {
+    if (disabled || !onReuseAsset) return;
+    const assetId = event.dataTransfer.getData(PROJECT_ASSET_DRAG_TYPE);
+    if (!assetId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragTarget(false);
+    const asset = assets.find((item) => item.id === assetId);
+    if (!asset) {
+      setMessage(language === "en" ? "This project asset is no longer available." : "这个项目素材已经不存在了。");
+      return;
+    }
+    onActivate?.();
+    try {
+      const reused = await onReuseAsset(asset.id, kind);
+      setMessage(language === "en" ? `Selected ${reused.fileName}` : `已选用：${reused.fileName}`);
+      onSelected?.(reused);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : (language === "en" ? "Unable to use this asset." : "无法使用该素材。"));
+    }
+  };
+  return { isDragTarget, message, onDragOver, onDragLeave, onDrop };
+}
+
+function AssetReusePicker({ language, assets, kind, onReuseAsset, disabled = false, onActivate, onSelected, assetFilter, label }: { language: "zh" | "en"; assets: ProjectAsset[]; kind: ProjectAssetKind; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; disabled?: boolean; onActivate?: () => void; onSelected?: (asset: ProjectAsset) => void; assetFilter?: (asset: ProjectAsset) => boolean; label?: string }) {
   const [message, setMessage] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const reusableAssets = assets.filter((asset) => kind === "side-gift" || kind === "side-talent" ? asset.kind === kind : assetCategoryFor(asset.kind) === assetCategoryFor(kind));
+  const reusableAssets = assets.filter(assetFilter ?? ((asset) => defaultReuseAssetFilter(asset, kind)));
   if (!reusableAssets.length) return null;
   const orderedAssets = [...reusableAssets].reverse();
   const reuse = async (assetId: string) => {
@@ -1454,13 +1516,14 @@ function AssetReusePicker({ language, assets, kind, onReuseAsset, disabled = fal
       const asset = await onReuseAsset(assetId, kind);
       setMessage(language === "en" ? `Reused ${asset.fileName}` : `已复用：${asset.fileName}`);
       setExpanded(false);
+      onSelected?.(asset);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : (language === "en" ? "Unable to reuse this asset." : "无法复用该素材。"));
     }
   };
   return (
     <div className="asset-reuse" onClick={(event) => event.stopPropagation()}>
-      <span className="asset-reuse-label">{language === "en" ? `Reuse ${assetCategoryLabel(assetCategoryFor(kind), language).toLowerCase()}` : `复用已有${assetCategoryLabel(assetCategoryFor(kind), language)}`}</span>
+      <span className="asset-reuse-label">{label ?? (language === "en" ? `Reuse ${assetCategoryLabel(assetCategoryFor(kind), language).toLowerCase()}` : `复用已有${assetCategoryLabel(assetCategoryFor(kind), language)}`)}</span>
       <div className="asset-reuse-quick">
         {orderedAssets.slice(0, 4).map((asset) => (
           <button type="button" className="asset-reuse-thumb" key={asset.id} disabled={disabled} onClick={() => void reuse(asset.id)} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`}>
@@ -1483,22 +1546,59 @@ function AssetReusePicker({ language, assets, kind, onReuseAsset, disabled = fal
   );
 }
 
-function AssetUpload({ language, kind, label, help, assets, onAddAsset, onReuseAsset, compact = false, disabled = false }: { language: "zh" | "en"; kind: ProjectAssetKind; label: string; help: string; assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean }) {
+function sameAssetImage(left: ProjectAsset, right: ProjectAsset) {
+  return left.id === right.id || (left.fileName === right.fileName && left.sizeBytes === right.sizeBytes && left.mimeType === right.mimeType);
+}
+
+function AssetUpload({ language, kind, label, help, assets, onAddAsset, onReuseAsset, compact = false, disabled = false, reuseAssetFilter, reuseLabel, selectedAsset }: { language: "zh" | "en"; kind: ProjectAssetKind; label: string; help: string; assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; compact?: boolean; disabled?: boolean; reuseAssetFilter?: (asset: ProjectAsset) => boolean; reuseLabel?: string; selectedAsset?: ProjectAsset }) {
   const upload = useImagePasteUpload({ kind, onAddAsset, disabled });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const activeAsset = selectedAsset ?? latestAsset(assets, kind);
+  const [isChoosing, setIsChoosing] = useState(!activeAsset);
+  const drop = useProjectAssetDrop({ language, assets, kind, onReuseAsset, disabled, onSelected: () => setIsChoosing(false) });
+  const pickerFilter = (asset: ProjectAsset) => {
+    if (activeAsset && sameAssetImage(asset, activeAsset)) return false;
+    return reuseAssetFilter ? reuseAssetFilter(asset) : defaultReuseAssetFilter(asset, kind);
+  };
+
+  useEffect(() => {
+    if (activeAsset) setIsChoosing(false);
+  }, [activeAsset?.id]);
 
   return (
-    <label
-      className={`${compact ? "asset-upload compact" : "asset-upload"}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
-      title={language === "en" ? "Hover and press Ctrl / Cmd + V to paste an image" : "悬停后可按 Ctrl / Cmd + V 粘贴图片"}
+    <div
+      className={`${compact ? "asset-upload compact" : "asset-upload"}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}${drop.isDragTarget ? " drop-ready" : ""}${activeAsset && !isChoosing ? " has-selection" : ""}`}
+      title={language === "en" ? "Paste an image, or drag one here from project assets" : "可粘贴图片，也可从项目资产拖入"}
       onPointerEnter={upload.onPointerEnter}
       onPointerLeave={upload.onPointerLeave}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={(event) => void drop.onDrop(event)}
     >
-      <span>{label}</span>
-      <small>{help}</small>
-      <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
-      <strong>{upload.message || (disabled ? (language === "en" ? "Restoring project" : "正在恢复项目") : (language === "en" ? "Choose image" : "选择图片"))}</strong>
-      <AssetReusePicker language={language} assets={assets} kind={kind} onReuseAsset={onReuseAsset} disabled={disabled} />
-    </label>
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
+      {activeAsset && !isChoosing ? (
+        <div className="asset-upload-selection">
+          <img src={activeAsset.previewUrl} alt="" />
+          <div>
+            <span>{language === "en" ? "Selected image" : "当前选用图片"}</span>
+            <strong>{activeAsset.fileName}</strong>
+            <small>{assetLabel(activeAsset.kind, language)}</small>
+          </div>
+          <button type="button" disabled={disabled} onClick={() => setIsChoosing(true)}>{language === "en" ? "Change" : "更换图片"}</button>
+        </div>
+      ) : (
+        <>
+          <span>{label}</span>
+          <small>{help}</small>
+          <div className="asset-upload-actions">
+            <button type="button" disabled={disabled} onClick={() => inputRef.current?.click()}>{upload.message || (disabled ? (language === "en" ? "Restoring project" : "正在恢复项目") : (language === "en" ? "Choose image" : "选择图片"))}</button>
+            {activeAsset ? <button className="subtle" type="button" onClick={() => setIsChoosing(false)}>{language === "en" ? "Cancel" : "取消更换"}</button> : null}
+          </div>
+          <AssetReusePicker language={language} assets={assets} kind={kind} onReuseAsset={onReuseAsset} disabled={disabled} assetFilter={pickerFilter} label={reuseLabel} onSelected={() => setIsChoosing(false)} />
+        </>
+      )}
+      {drop.message && !activeAsset ? <small className="asset-drop-message">{drop.message}</small> : null}
+    </div>
   );
 }
 
@@ -1506,13 +1606,17 @@ function TypographyContentInput({ language, value, onTextChange, assets = [], on
   const inputRef = useRef<HTMLInputElement>(null);
   const unavailableUpload = useCallback(async () => { throw new Error("当前输入框不接收图片。 "); }, []);
   const upload = useImagePasteUpload({ kind: "layout-reference", onAddAsset: onAddAsset ?? unavailableUpload, disabled: disabled || !allowLayoutReference });
+  const drop = useProjectAssetDrop({ language, assets, kind: "layout-reference", onReuseAsset, disabled: disabled || !allowLayoutReference });
 
   return (
     <section
-      className={`typography-content-input${disabled ? " disabled" : ""}${allowLayoutReference && upload.isPasteTarget ? " paste-ready" : ""}`}
+      className={`typography-content-input${disabled ? " disabled" : ""}${allowLayoutReference && upload.isPasteTarget ? " paste-ready" : ""}${drop.isDragTarget ? " drop-ready" : ""}`}
       title={allowLayoutReference ? (language === "en" ? "Hover and press Ctrl / Cmd + V to paste a layout reference" : "悬停后可按 Ctrl / Cmd + V 粘贴带布局的文本图片") : (language === "en" ? "Enter or paste multiline text" : "可直接输入或粘贴多行文本")}
       onPointerEnter={allowLayoutReference ? upload.onPointerEnter : undefined}
       onPointerLeave={allowLayoutReference ? upload.onPointerLeave : undefined}
+      onDragOver={allowLayoutReference ? drop.onDragOver : undefined}
+      onDragLeave={allowLayoutReference ? drop.onDragLeave : undefined}
+      onDrop={allowLayoutReference ? (event) => void drop.onDrop(event) : undefined}
     >
       <label htmlFor="typography-text">{language === "en" ? "Text content" : "文本内容"}</label>
       <textarea
@@ -1524,7 +1628,7 @@ function TypographyContentInput({ language, value, onTextChange, assets = [], on
       />
       {allowLayoutReference ? <>
         <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || (language === "en" ? "Choose layout text image" : "选择带布局文本图片")}</button>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={disabled}>{upload.message || drop.message || (language === "en" ? "Choose layout text image" : "选择带布局文本图片")}</button>
         {onReuseAsset ? <AssetReusePicker language={language} assets={assets} kind="layout-reference" onReuseAsset={onReuseAsset} disabled={disabled} /> : null}
       </> : <small className="text-input-hint">{language === "en" ? "Multiline text is supported." : "支持换行；可直接粘贴多行文本。"}</small>}
     </section>
@@ -1542,18 +1646,22 @@ function TypographyInstructionInput({ language, value, onChange, disabled }: { l
 
 function CustomFontReferenceCard({ language, selected, disabled, assets, onAddAsset, onReuseAsset, onActivate }: { language: "zh" | "en"; selected: boolean; disabled: boolean; assets: ProjectAsset[]; onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>; onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>; onActivate: () => void }) {
   const upload = useImagePasteUpload({ kind: "font-reference", onAddAsset, disabled, onActivate });
+  const drop = useProjectAssetDrop({ language, assets, kind: "font-reference", onReuseAsset, disabled, onActivate });
 
   return (
     <label
-      className={`font-preset-card custom-font-preset${selected ? " selected" : ""}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}`}
+      className={`font-preset-card custom-font-preset${selected ? " selected" : ""}${disabled ? " disabled" : ""}${upload.isPasteTarget ? " paste-ready" : ""}${drop.isDragTarget ? " drop-ready" : ""}`}
       title={language === "en" ? "Select a glyph reference or hover and press Ctrl / Cmd + V" : "点击选择字体参考，或悬停后按 Ctrl / Cmd + V 粘贴图片"}
       onClick={onActivate}
       onPointerEnter={upload.onPointerEnter}
       onPointerLeave={upload.onPointerLeave}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={(event) => void drop.onDrop(event)}
     >
       <span className="custom-font-mark">Aa</span>
       <strong>{language === "en" ? "Custom glyph reference" : "自定义字体字形"}</strong>
-      <small>{upload.message || (language === "en" ? "Use a desaturated font image to learn glyphs and strokes." : "建议上传去色字体图，只学习字形与笔画")}</small>
+      <small>{upload.message || drop.message || (language === "en" ? "Use a desaturated font image to learn glyphs and strokes." : "建议上传去色字体图，只学习字形与笔画")}</small>
       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={upload.onChange} disabled={disabled} />
       <AssetReusePicker language={language} assets={assets} kind="font-reference" onReuseAsset={onReuseAsset} disabled={disabled} onActivate={onActivate} />
     </label>
@@ -1864,6 +1972,13 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
 
 const assetCategoryOrder = ["base-image", "top", "bottom", "side", "generation-reference", "text-reference", "side-content", "generated-typography"] as const;
 type AssetCategory = typeof assetCategoryOrder[number];
+
+function isColorMaterialReferenceAsset(asset: ProjectAsset) {
+  return asset.kind !== "font-reference"
+    && asset.kind !== "layout-reference"
+    && asset.kind !== "typography-draft"
+    && asset.kind !== "typography";
+}
 
 function assetCategoryFor(kind: ProjectAssetKind): AssetCategory {
   if (kind === "reference") return "generation-reference";
