@@ -1419,7 +1419,7 @@ function ExportTool({ language, assets, composition }: { language: "zh" | "en"; 
         <div>
           <span>{isEnglish ? "COMPOSITION PACKAGE" : "效果融合默认包"}</span>
           <strong>{isEnglish ? `${selectedCount} selected layers + preview` : `${selectedCount} 个已选贴片图层 + 预览效果图`}</strong>
-          <small>{isEnglish ? "Exports visible sticker PNG layers and the current 1080 × 1920 composition preview." : "导出可见贴片 PNG 图层，以及当前 1080 × 1920 效果融合预览图。"}</small>
+          <small>{isEnglish ? "Exports visible PNG layers with composition opacity and masks baked in, plus the current 1080 × 1920 preview." : "导出已写入透明度与渐隐蒙版的可见 PNG 图层，以及当前 1080 × 1920 效果融合预览图。"}</small>
         </div>
         <button type="button" disabled={(!selectedCount && !composition.layers.some((layer) => layer.visible)) || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export composition package" : "一键导出效果融合资产包")}</button>
         <p>{exportMessage || (isEnglish ? "Ready to export the default composition package." : "默认资产包已就绪，可直接导出。")}</p>
@@ -2241,13 +2241,14 @@ function applyLayerMask(context: CanvasRenderingContext2D, layer: CompositionLay
 
 async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en", composition: CompositionDocument, projectAssets: ProjectAsset[]) {
   const usedNames = new Map<string, number>();
-  const visibleStickerAssetIds = new Set(composition.layers.filter((layer) => layer.visible && layer.kind !== "base-image").map((layer) => layer.assetId));
   const files = await Promise.all(assets.map(async (asset, index) => {
-    const exportAsPng = visibleStickerAssetIds.has(asset.id);
-    const blob = exportAsPng ? await convertAssetToPng(asset.blob) : asset.blob;
+    const compositionLayer = composition.layers.find((layer) => layer.visible && layer.kind !== "base-image" && layer.assetId === asset.id);
+    const exportAsPng = Boolean(compositionLayer) || isStickerLayerAsset(asset.kind);
+    const blob = compositionLayer ? await renderCompositionLayerPng(compositionLayer, asset) : exportAsPng ? await convertAssetToPng(asset.blob) : asset.blob;
     const extension = exportAsPng ? "png" : extensionForAsset(asset);
+    const compositionFileName = compositionLayer ? `${assetLabel(compositionLayer.kind, language)}.png` : undefined;
     return {
-      name: uniqueZipName(asset.kind === "bottom-typography" ? "下贴文字图层.png" : `${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${stripFileExtension(asset.fileName || asset.kind)}.${extension}`, usedNames),
+      name: uniqueZipName(asset.kind === "bottom-typography" ? "下贴文字图层.png" : compositionFileName ?? `${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${stripFileExtension(asset.fileName || asset.kind)}.${extension}`, usedNames),
       bytes: new Uint8Array(await blob.arrayBuffer()),
     };
   }));
@@ -2258,16 +2259,20 @@ async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en", com
     outputSize: COMPOSITION_OUTPUT,
     previewFileName: "效果融合预览图.png",
     visibleCompositionLayers: composition.layers.filter((layer) => layer.visible).map((layer) => ({ kind: layer.kind, assetId: layer.assetId, opacity: layer.opacity, zIndex: layer.zIndex })),
-    assets: assets.map((asset) => ({
-      id: asset.id,
-      kind: asset.kind,
-      label: assetLabel(asset.kind, language),
-      fileName: asset.fileName,
-      mimeType: asset.mimeType,
-      sizeBytes: asset.sizeBytes,
-      trimmed: asset.trimmed,
-      createdAt: asset.createdAt,
-    })),
+    assets: assets.map((asset) => {
+      const compositionLayer = composition.layers.find((layer) => layer.visible && layer.kind !== "base-image" && layer.assetId === asset.id);
+      return {
+        id: asset.id,
+        kind: asset.kind,
+        label: assetLabel(asset.kind, language),
+        fileName: asset.fileName,
+        mimeType: asset.mimeType,
+        sizeBytes: asset.sizeBytes,
+        trimmed: asset.trimmed,
+        alphaBakedFromComposition: Boolean(compositionLayer),
+        createdAt: asset.createdAt,
+      };
+    }),
   };
   files.push({ name: "project-manifest.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
   return new Blob([createStoredZip(files)], { type: "application/zip" });
@@ -2291,6 +2296,38 @@ async function convertAssetToPng(blob: Blob) {
   context.drawImage(bitmap, 0, 0);
   bitmap.close();
   return new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("无法转换贴片 PNG 图层。")), "image/png"));
+}
+
+function isStickerLayerAsset(kind: ProjectAssetKind) {
+  return kind === "top" || kind === "bottom" || kind === "side" || kind === "typography" || kind === "bottom-typography";
+}
+
+async function renderCompositionLayerPng(layer: CompositionLayer, asset: ProjectAsset) {
+  const width = Math.max(1, Math.round((layer.width / 100) * COMPOSITION_OUTPUT.width));
+  const height = Math.max(1, Math.round((layer.height / 100) * COMPOSITION_OUTPUT.height));
+  const bitmap = await createImageBitmap(asset.blob);
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  const sourceContext = sourceCanvas.getContext("2d");
+  if (!sourceContext) {
+    bitmap.close();
+    throw new Error("无法生成带透明度的贴片 PNG 图层。");
+  }
+  sourceContext.imageSmoothingEnabled = true;
+  sourceContext.imageSmoothingQuality = "high";
+  drawContainedSource(sourceContext, bitmap, 0, 0, width, height);
+  bitmap.close();
+  if (layer.kind === "top" || layer.kind === "bottom") applyLayerMask(sourceContext, layer, { x: 0, y: 0, width, height });
+
+  const output = document.createElement("canvas");
+  output.width = width;
+  output.height = height;
+  const outputContext = output.getContext("2d");
+  if (!outputContext) throw new Error("无法生成带透明度的贴片 PNG 图层。");
+  outputContext.globalAlpha = layer.opacity / 100;
+  outputContext.drawImage(sourceCanvas, 0, 0);
+  return new Promise<Blob>((resolve, reject) => output.toBlob((value) => value ? resolve(value) : reject(new Error("无法导出带透明度的贴片 PNG 图层。")), "image/png"));
 }
 
 function uniqueZipName(name: string, usedNames: Map<string, number>) {
