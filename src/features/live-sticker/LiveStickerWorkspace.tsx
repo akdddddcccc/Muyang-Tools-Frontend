@@ -560,6 +560,7 @@ function SideStickerTool({
   settings,
   onSettingsChange,
   onAddAsset,
+  onReuseAsset,
   onComplete,
   projectReady,
 }: ToolProps & {
@@ -618,7 +619,7 @@ function SideStickerTool({
 
   const generateBackground = async () => {
     if (!generationReference) {
-      setMessage(isEnglish ? "Add a generation reference in Step 1 first." : "请先在第 1 步添加生图参考。 ");
+      setMessage(isEnglish ? "Add or drag a side-background reference here first." : "请先在当前区域上传或拖入侧贴背景参考图。 ");
       return;
     }
     setIsGeneratingBackground(true);
@@ -695,8 +696,19 @@ function SideStickerTool({
               <label><span>{isEnglish ? "Fade" : "渐隐色"}</span><input type="color" value={settings.secondaryColor} onChange={(event) => onSettingsChange({ secondaryColor: event.target.value })} /></label>
             </div>
             <div className="side-background-generation">
+              <AssetUpload
+                language={language}
+                kind="reference"
+                label={isEnglish ? "Side-background reference" : "侧贴背景参考图"}
+                help={isEnglish ? "Automatically inherits the latest background reference from Step 1. Upload, paste or drag another project image here to override it." : "自动继承第 1 步最新的背景参考图；也可在这里上传、粘贴或拖入其他项目图片覆盖。"}
+                assets={assets}
+                onAddAsset={onAddAsset}
+                onReuseAsset={onReuseAsset}
+                selectedAsset={generationReference}
+                compact
+                disabled={!projectReady || isGeneratingBackground}
+              />
               <button type="button" disabled={!projectReady || !generationReference || isGeneratingBackground} onClick={() => void generateBackground()}>{isGeneratingBackground ? (isEnglish ? "Generating..." : "正在生成…") : (isEnglish ? "Generate side background from reference" : "根据参考生成侧贴背景")}</button>
-              <small>{generationReference ? (isEnglish ? `Reference: ${generationReference.fileName}` : `生图参考：${generationReference.fileName}`) : (isEnglish ? "Add a generation reference in Step 1." : "请先在第 1 步添加生图参考。")}</small>
             </div>
           </section>
           <section className="side-finalize-block">
