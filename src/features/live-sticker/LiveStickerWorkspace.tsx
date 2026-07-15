@@ -1461,7 +1461,6 @@ function ExportTool({ language, assets, composition }: { language: "zh" | "en"; 
         <button type="button" disabled={isExporting} onClick={() => setSelectedAssetIds(new Set(defaultAssetIds))}>{isEnglish ? "Use visible layers" : "恢复预览默认项"}</button>
         <button type="button" disabled={!assets.length || isExporting} onClick={() => setSelectedAssetIds(new Set(assets.map((asset) => asset.id)))}>{isEnglish ? "Select all" : "全选"}</button>
         <button type="button" disabled={!selectedCount || isExporting} onClick={() => setSelectedAssetIds(new Set())}>{isEnglish ? "Clear" : "清空"}</button>
-        <label className="advanced-option"><input type="checkbox" disabled /> {isEnglish ? "Project configuration JSON (advanced later)" : "项目配置 JSON（后期高级功能）"}</label>
         <small className="export-message">{isEnglish ? "Hidden composition layers are excluded from the default package." : "小眼睛关闭的图层不会进入默认包；直播间底图只参与预览合成。"}</small>
       </div>
     </ToolFrame>
@@ -2254,27 +2253,6 @@ async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en", com
   }));
   const preview = await renderCompositionPreview(composition, projectAssets);
   files.push({ name: "效果融合预览图.png", bytes: new Uint8Array(await preview.arrayBuffer()) });
-  const manifest = {
-    exportedAt: new Date().toISOString(),
-    outputSize: COMPOSITION_OUTPUT,
-    previewFileName: "效果融合预览图.png",
-    visibleCompositionLayers: composition.layers.filter((layer) => layer.visible).map((layer) => ({ kind: layer.kind, assetId: layer.assetId, opacity: layer.opacity, zIndex: layer.zIndex })),
-    assets: assets.map((asset) => {
-      const compositionLayer = composition.layers.find((layer) => layer.visible && layer.kind !== "base-image" && layer.assetId === asset.id);
-      return {
-        id: asset.id,
-        kind: asset.kind,
-        label: assetLabel(asset.kind, language),
-        fileName: asset.fileName,
-        mimeType: asset.mimeType,
-        sizeBytes: asset.sizeBytes,
-        trimmed: asset.trimmed,
-        alphaBakedFromComposition: Boolean(compositionLayer),
-        createdAt: asset.createdAt,
-      };
-    }),
-  };
-  files.push({ name: "project-manifest.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
   return new Blob([createStoredZip(files)], { type: "application/zip" });
 }
 

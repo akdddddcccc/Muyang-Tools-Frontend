@@ -345,7 +345,6 @@
 .export-footer button { padding: 8px 12px; color: #07100a; background: #7bf89c; border: 1px solid #7bf89c; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 700; }
 .export-footer button:first-of-type { margin-left: auto; }
 .export-footer button:disabled { color: #5d7064; background: #1b2520; border-color: #33453a; cursor: not-allowed; }
-.advanced-option { color: #61746a; font-size: 12px; }
 .export-message { flex: 1 1 100%; color: #89a195; font-size: 11px; line-height: 1.5; }
 @media (max-width: 1024px) {
   .tool-panel { max-width: none; }
