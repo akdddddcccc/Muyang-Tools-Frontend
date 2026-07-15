@@ -256,7 +256,7 @@ function AssetRail({ language, assets, onRemove, onClear, persistenceState }: { 
                     className="asset-chip"
                     key={asset.id}
                     draggable
-                    title={`${assetLabel(asset.kind, language)} · ${asset.fileName} · ${isEnglish ? "Drag to a compatible image input" : "可拖到兼容的图片输入框"}`}
+                    title={`${assetLabel(asset.kind, language)} · ${asset.fileName} · ${isEnglish ? "Drag to any image input" : "可拖到任意图片输入框"}`}
                     onDragStart={(event) => {
                       event.dataTransfer.effectAllowed = "copy";
                       event.dataTransfer.setData(PROJECT_ASSET_DRAG_TYPE, asset.id);
@@ -923,7 +923,7 @@ function FlowAssetNode({ data: node }: { data: FlowAssetNodeData }) {
   return (
     <div
       className={`flow-asset-node${upload.isPasteTarget ? " paste-ready" : ""}${drop.isDragTarget ? " drop-ready" : ""}`}
-      title={isEnglish ? "Paste an image, or drag a compatible project asset here" : "可粘贴图片，也可拖入兼容的项目资产"}
+      title={isEnglish ? "Paste an image, or drag any project image here" : "可粘贴图片，也可拖入任意项目图片"}
       onPointerEnter={upload.onPointerEnter}
       onPointerLeave={upload.onPointerLeave}
       onDragOver={drop.onDragOver}
