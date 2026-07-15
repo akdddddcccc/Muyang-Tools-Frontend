@@ -330,7 +330,7 @@ function ToolPanel({
   if (activeTool === "composition") {
     return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
   }
-  return <ExportTool language={language} assets={assets} />;
+  return <ExportTool language={language} assets={assets} composition={composition} />;
 }
 
 function BackgroundTool({ language, assets, onAddAsset, onReuseAsset, health, projectReady }: ToolProps & { language: "zh" | "en"; health: CoreHealth | null; projectReady: boolean }) {
@@ -1373,21 +1373,39 @@ function pointsToSvgPath(points: Array<{ x: number; y: number }>) {
   return `M ${points.map((point) => `${point.x} ${point.y}`).join(" L ")}`;
 }
 
-function ExportTool({ language, assets }: { language: "zh" | "en"; assets: ProjectAsset[] }) {
-  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set());
+function ExportTool({ language, assets, composition }: { language: "zh" | "en"; assets: ProjectAsset[]; composition: CompositionDocument }) {
+  const defaultAssetIds = useMemo(() => composition.layers
+    .filter((layer) => layer.visible && layer.kind !== "base-image" && assets.some((asset) => asset.id === layer.assetId))
+    .map((layer) => layer.assetId), [assets, composition.layers]);
+  const defaultSelectionKey = defaultAssetIds.join("|");
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set(defaultAssetIds));
   const [isExporting, setIsExporting] = useState(false);
   const [exportMessage, setExportMessage] = useState("");
   const selectedAssets = useMemo(() => assets.filter((asset) => selectedAssetIds.has(asset.id)), [assets, selectedAssetIds]);
+  const exportGroups = useMemo(() => assetCategoryOrder
+    .map((category) => ({
+      category,
+      assets: assets
+        .filter((asset) => assetCategoryFor(asset.kind) === category)
+        .slice()
+        .sort((first, second) => second.createdAt.localeCompare(first.createdAt)),
+    }))
+    .filter((group) => group.assets.length > 0), [assets]);
   const selectedCount = selectedAssets.length;
   const isEnglish = language === "en";
+
+  useEffect(() => {
+    setSelectedAssetIds(new Set(defaultAssetIds));
+  }, [defaultSelectionKey]);
+
   const exportSelected = async () => {
-    if (!selectedAssets.length) return;
+    if (!selectedAssets.length && !composition.layers.some((layer) => layer.visible)) return;
     setIsExporting(true);
-    setExportMessage(isEnglish ? "Packing selected assets..." : "正在打包已选资产…");
+    setExportMessage(isEnglish ? "Rendering the composition preview and packing visible sticker layers..." : "正在生成效果融合预览图，并打包可见贴片图层…");
     try {
-      const zip = await makeProjectZip(selectedAssets, language);
-      downloadBlob(zip, `muyang-live-sticker-assets-${new Date().toISOString().slice(0, 10)}.zip`);
-      setExportMessage(isEnglish ? "ZIP exported." : "ZIP 已导出。");
+      const zip = await makeProjectZip(selectedAssets, language, composition, assets);
+      downloadBlob(zip, `muyang-live-sticker-composition-${new Date().toISOString().slice(0, 10)}.zip`);
+      setExportMessage(isEnglish ? "Composition package exported with a 1080 × 1920 preview." : "效果融合资产包已导出，内含 1080 × 1920 预览效果图。");
     } catch (error) {
       setExportMessage(error instanceof Error ? error.message : (isEnglish ? "Export failed." : "导出失败。"));
     } finally {
@@ -1396,35 +1414,47 @@ function ExportTool({ language, assets }: { language: "zh" | "en"; assets: Proje
   };
 
   return (
-    <ToolFrame eyebrow="05 / EXPORT ASSETS" title={isEnglish ? "Export assets" : "导出资产"} detail={isEnglish ? "Select project assets and export a local ZIP. Images are packed in the browser with a manifest file." : "选择项目资产后可直接导出本地 ZIP；图片会在浏览器内打包，并附带一份项目清单。"}>
+    <ToolFrame eyebrow="05 / EXPORT ASSETS" title={isEnglish ? "One-click composition export" : "一键导出资产"} detail={isEnglish ? "Visible sticker layers from the composition preview are selected by default. The ZIP also includes a flattened 1080 × 1920 preview image." : "默认勾选效果融合预览窗口中当前显示的贴片图层；导出的 ZIP 会额外包含一张 1080 × 1920 预览效果图。"}>
       <div className="export-list">
-        {assets.length === 0 ? <p className="empty-copy">{isEnglish ? "There are no project assets to export." : "还没有可导出的项目资产。"}</p> : assets.map((asset) => {
-          const selected = selectedAssetIds.has(asset.id);
-          return (
-            <label className="export-row" key={asset.id}>
-              <input
-                type="checkbox"
-                checked={selected}
-                onChange={() => setSelectedAssetIds((current) => {
-                  const next = new Set(current);
-                  if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id);
-                  return next;
-                })}
-              />
-              <span>{assetLabel(asset.kind, language)}</span>
-              <strong>{asset.fileName}</strong>
-              <small>{formatBytes(asset.sizeBytes)}</small>
-            </label>
-          );
-        })}
+        {assets.length === 0 ? <p className="empty-copy">{isEnglish ? "There are no project assets to export." : "还没有可导出的项目资产。"}</p> : exportGroups.map((group) => (
+          <section className="export-asset-group" key={group.category}>
+            <div className="export-group-heading">
+              <strong>{assetCategoryLabel(group.category, language)}</strong>
+              <span>{group.assets.length}</span>
+              <small>{isEnglish ? "Newest first" : "新生成在前"}</small>
+            </div>
+            {group.assets.map((asset) => {
+              const selected = selectedAssetIds.has(asset.id);
+              const isCompositionDefault = defaultAssetIds.includes(asset.id);
+              return (
+                <label className="export-row" key={asset.id}>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => setSelectedAssetIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(asset.id)) next.delete(asset.id); else next.add(asset.id);
+                      return next;
+                    })}
+                  />
+                  <img src={asset.previewUrl} alt="" />
+                  <span>{assetLabel(asset.kind, language)}{isCompositionDefault ? <em>{isEnglish ? "Preview" : "预览默认"}</em> : null}</span>
+                  <strong>{asset.fileName}</strong>
+                  <small>{formatBytes(asset.sizeBytes)}</small>
+                </label>
+              );
+            })}
+          </section>
+        ))}
       </div>
       <div className="export-footer">
-        <span>{isEnglish ? `${selectedCount} assets selected` : `${selectedCount} 个资产已选择`}</span>
+        <span>{isEnglish ? `${selectedCount} layers selected + 1 preview` : `已选择 ${selectedCount} 个贴片图层 + 1 张预览效果图`}</span>
+        <button type="button" disabled={isExporting} onClick={() => setSelectedAssetIds(new Set(defaultAssetIds))}>{isEnglish ? "Use visible layers" : "恢复预览默认项"}</button>
         <button type="button" disabled={!assets.length || isExporting} onClick={() => setSelectedAssetIds(new Set(assets.map((asset) => asset.id)))}>{isEnglish ? "Select all" : "全选"}</button>
         <button type="button" disabled={!selectedCount || isExporting} onClick={() => setSelectedAssetIds(new Set())}>{isEnglish ? "Clear" : "清空"}</button>
-        <button type="button" disabled={!selectedCount || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export ZIP" : "导出 ZIP")}</button>
+        <button type="button" disabled={(!selectedCount && !composition.layers.some((layer) => layer.visible)) || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export composition package" : "一键导出效果融合资产包")}</button>
         <label className="advanced-option"><input type="checkbox" disabled /> {isEnglish ? "Project configuration JSON (advanced later)" : "项目配置 JSON（后期高级功能）"}</label>
-        <small className="export-message">{exportMessage || (isEnglish ? "The manifest records asset kind, file name and size." : "清单会记录素材类型、文件名与大小。")}</small>
+        <small className="export-message">{exportMessage || (isEnglish ? "Hidden composition layers are excluded from the default package." : "小眼睛关闭的图层不会进入默认包；直播间底图只参与预览合成。")}</small>
       </div>
     </ToolFrame>
   );
@@ -2102,15 +2132,124 @@ function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
   return labels[category][language];
 }
 
-async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en") {
+async function renderCompositionPreview(composition: CompositionDocument, assets: ProjectAsset[]) {
+  const canvas = document.createElement("canvas");
+  canvas.width = COMPOSITION_OUTPUT.width;
+  canvas.height = COMPOSITION_OUTPUT.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("无法创建效果融合预览图。");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+
+  const visibleLayers = composition.layers
+    .filter((layer) => layer.visible)
+    .slice()
+    .sort((first, second) => first.zIndex - second.zIndex);
+
+  for (const layer of visibleLayers) {
+    const asset = assets.find((item) => item.id === layer.assetId);
+    if (!asset) continue;
+    const bitmap = await createImageBitmap(asset.blob);
+    const layerCanvas = document.createElement("canvas");
+    layerCanvas.width = COMPOSITION_OUTPUT.width;
+    layerCanvas.height = COMPOSITION_OUTPUT.height;
+    const layerContext = layerCanvas.getContext("2d");
+    if (!layerContext) {
+      bitmap.close();
+      throw new Error("无法渲染效果融合图层。");
+    }
+    layerContext.imageSmoothingEnabled = true;
+    layerContext.imageSmoothingQuality = "high";
+
+    if (layer.kind === "base-image") {
+      const drawHeight = COMPOSITION_OUTPUT.height;
+      const drawWidth = drawHeight * (bitmap.width / Math.max(bitmap.height, 1));
+      layerContext.drawImage(bitmap, (COMPOSITION_OUTPUT.width - drawWidth) / 2, 0, drawWidth, drawHeight);
+    } else {
+      const box = {
+        x: (layer.x / 100) * COMPOSITION_OUTPUT.width,
+        y: (layer.y / 100) * COMPOSITION_OUTPUT.height,
+        width: (layer.width / 100) * COMPOSITION_OUTPUT.width,
+        height: (layer.height / 100) * COMPOSITION_OUTPUT.height,
+      };
+      drawContainedSource(layerContext, bitmap, box.x, box.y, box.width, box.height);
+      if (layer.kind === "top" || layer.kind === "bottom") applyLayerMask(layerContext, layer, box);
+    }
+    bitmap.close();
+    context.save();
+    context.globalAlpha = layer.opacity / 100;
+    context.drawImage(layerCanvas, 0, 0);
+    context.restore();
+  }
+
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("无法导出效果融合预览图。")), "image/png"));
+}
+
+function drawContainedSource(context: CanvasRenderingContext2D, source: ImageBitmap, x: number, y: number, width: number, height: number) {
+  const imageAspect = source.width / Math.max(source.height, 1);
+  const boxAspect = width / Math.max(height, 1);
+  const drawWidth = imageAspect > boxAspect ? width : height * imageAspect;
+  const drawHeight = imageAspect > boxAspect ? width / imageAspect : height;
+  context.save();
+  context.beginPath();
+  context.rect(x, y, width, height);
+  context.clip();
+  context.drawImage(source, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+  context.restore();
+}
+
+function applyLayerMask(context: CanvasRenderingContext2D, layer: CompositionLayer, box: { x: number; y: number; width: number; height: number }) {
+  const width = Math.max(1, Math.round(box.width));
+  const height = Math.max(1, Math.round(box.height));
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  const maskContext = maskCanvas.getContext("2d");
+  if (!maskContext) return;
+  const fallbackY = layer.kind === "top" ? layer.y + layer.height * .72 : layer.y + layer.height * .28;
+  const source = layer.mask.fadePath.length > 1 ? layer.mask.fadePath : defaultFadeLine(fallbackY, layer.x, layer.x + layer.width);
+  const points = normalizeFadePath(source, layer)
+    .map((point) => ({ x: ((point.x - layer.x) / layer.width) * width, y: ((point.y - layer.y) / layer.height) * height }))
+    .sort((first, second) => first.x - second.x);
+  const feather = Math.max(1, (height * layer.mask.feather) / 520);
+  const alpha = maskContext.createImageData(width, height);
+  for (let x = 0; x < width; x += 1) {
+    const boundary = boundaryYAt(points, x);
+    for (let y = 0; y < height; y += 1) {
+      const distance = layer.kind === "top" ? boundary - y : y - boundary;
+      const index = (y * width + x) * 4;
+      alpha.data[index] = 255;
+      alpha.data[index + 1] = 255;
+      alpha.data[index + 2] = 255;
+      alpha.data[index + 3] = smoothMaskAlpha(distance, feather);
+    }
+  }
+  maskContext.putImageData(alpha, 0, 0);
+  context.save();
+  context.globalCompositeOperation = "destination-in";
+  context.drawImage(maskCanvas, box.x, box.y, box.width, box.height);
+  context.restore();
+}
+
+async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en", composition: CompositionDocument, projectAssets: ProjectAsset[]) {
   const usedNames = new Map<string, number>();
-  const files = await Promise.all(assets.map(async (asset, index) => ({
-    name: uniqueZipName(asset.kind === "bottom-typography" ? "下贴文字图层.png" : `${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${asset.fileName || asset.kind}.${extensionForAsset(asset)}`, usedNames),
-    bytes: new Uint8Array(await asset.blob.arrayBuffer()),
-  })));
+  const visibleStickerAssetIds = new Set(composition.layers.filter((layer) => layer.visible && layer.kind !== "base-image").map((layer) => layer.assetId));
+  const files = await Promise.all(assets.map(async (asset, index) => {
+    const exportAsPng = visibleStickerAssetIds.has(asset.id);
+    const blob = exportAsPng ? await convertAssetToPng(asset.blob) : asset.blob;
+    const extension = exportAsPng ? "png" : extensionForAsset(asset);
+    return {
+      name: uniqueZipName(asset.kind === "bottom-typography" ? "下贴文字图层.png" : `${String(index + 1).padStart(2, "0")}-${assetLabel(asset.kind, language)}-${stripFileExtension(asset.fileName || asset.kind)}.${extension}`, usedNames),
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+    };
+  }));
+  const preview = await renderCompositionPreview(composition, projectAssets);
+  files.push({ name: "效果融合预览图.png", bytes: new Uint8Array(await preview.arrayBuffer()) });
   const manifest = {
     exportedAt: new Date().toISOString(),
     outputSize: COMPOSITION_OUTPUT,
+    previewFileName: "效果融合预览图.png",
+    visibleCompositionLayers: composition.layers.filter((layer) => layer.visible).map((layer) => ({ kind: layer.kind, assetId: layer.assetId, opacity: layer.opacity, zIndex: layer.zIndex })),
     assets: assets.map((asset) => ({
       id: asset.id,
       kind: asset.kind,
@@ -2124,6 +2263,26 @@ async function makeProjectZip(assets: ProjectAsset[], language: "zh" | "en") {
   };
   files.push({ name: "project-manifest.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
   return new Blob([createStoredZip(files)], { type: "application/zip" });
+}
+
+function stripFileExtension(fileName: string) {
+  return fileName.replace(/\.[a-z0-9]+$/i, "");
+}
+
+async function convertAssetToPng(blob: Blob) {
+  if (blob.type === "image/png") return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    throw new Error("无法转换贴片 PNG 图层。");
+  }
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("无法转换贴片 PNG 图层。")), "image/png"));
 }
 
 function uniqueZipName(name: string, usedNames: Map<string, number>) {
