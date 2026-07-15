@@ -415,7 +415,6 @@ function BackgroundTool({ language, assets, onAddAsset, onReuseAsset, health, pr
         {(["top", "bottom"] as BackgroundKind[]).map((kind) => <button type="button" key={kind} onClick={() => void runGeneration(kind)} disabled={!projectReady || !reference || Boolean(runningKind)}>{runningKind === kind ? (isEnglish ? "Generating..." : "生成中…") : isEnglish ? `Generate ${kind}` : `生成${kind === "top" ? "上贴" : "下贴"}`}</button>)}
         <p>{message || (!reference ? (isEnglish ? "Add a room or colour reference to enable OFOX generation." : "添加直播间或色彩参考图后即可启用 OFOX 生图。") : (isEnglish ? "Individual generation replaces that asset in the composition with the latest result." : "单项生成会把最新结果写入项目，并替换融合画板中的同类素材。"))}</p>
       </div>
-      <AssetCollection language={language} assets={assets.filter((asset) => asset.kind === "reference")} empty={isEnglish ? "Add a reference image for later background work." : "添加一张参考图后，背景任务会从这里读取素材。"} />
       <BackgroundOutputPreview language={language} assets={assets} runningKind={runningKind} onRegenerate={runGeneration} />
     </ToolFrame>
   );
@@ -548,7 +547,6 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
         </button>
         <p>{generationMessage || (isRefineMode ? (isEnglish ? "Upload an existing typography layer, enter replacement text, then refine it." : "上传已有文字层并填写替换文本后即可微调。") : (isEnglish ? "The editable text above is generated as a solid-matte draft first." : "上方文本可直接复制或修改；生成后先得到实底文字稿。"))}</p>
       </div>
-      <AssetCollection language={language} assets={assets.filter((asset) => isRefineMode ? asset.kind === "typography" : asset.kind === "layout-reference" || asset.kind === "font-reference")} empty={isRefineMode ? (isEnglish ? "Upload an existing text layer to refine it with new copy." : "上传一张已有文字图层后，可按新的文本内容微调。") : (isEnglish ? "Enter copy to generate, or upload layout and glyph references." : "输入文本即可生成；也可以上传布局文本图或字体参考。")} />
       <TypographyOutputPreview language={language} assets={assets} isCuttingOut={isCuttingOut} message={cutoutMessage} onCutout={runCutout} />
     </ToolFrame>
   );
@@ -1684,10 +1682,6 @@ function StatusCard({ title, value, detail }: { title: string; value: string; de
   return <article className="status-card"><span>{title}</span><h3>{value}</h3><p>{detail}</p></article>;
 }
 
-function AssetCollection({ language, assets, empty }: { language: "zh" | "en"; assets: ProjectAsset[]; empty: string }) {
-  return assets.length === 0 ? <p className="empty-copy">{empty}</p> : <div className="asset-collection">{assets.map((asset) => <img key={asset.id} src={asset.previewUrl} alt={asset.fileName} title={`${assetLabel(asset.kind, language)} · ${asset.fileName}`} />)}</div>;
-}
-
 function BackgroundOutputPreview({ language, assets, runningKind, onRegenerate }: { language: "zh" | "en"; assets: ProjectAsset[]; runningKind: BackgroundKind | "all" | ""; onRegenerate: (kind: BackgroundKind | "all") => Promise<void> }) {
   const isEnglish = language === "en";
   return (
@@ -1982,7 +1976,7 @@ function assetLabel(kind: ProjectAssetKind, language: "zh" | "en") {
   }[kind];
 }
 
-const assetCategoryOrder = ["base-image", "top", "bottom", "side", "generation-reference", "text-reference", "side-content", "generated-typography"] as const;
+const assetCategoryOrder = ["base-image", "top", "bottom", "side", "generation-reference", "typography-glyph-reference", "typography-color-reference", "typography-layout-reference", "side-content", "generated-typography"] as const;
 type AssetCategory = typeof assetCategoryOrder[number];
 
 function isColorMaterialReferenceAsset(asset: ProjectAsset) {
@@ -1994,7 +1988,9 @@ function isColorMaterialReferenceAsset(asset: ProjectAsset) {
 
 function assetCategoryFor(kind: ProjectAssetKind): AssetCategory {
   if (kind === "reference") return "generation-reference";
-  if (kind === "color-reference" || kind === "font-reference" || kind === "layout-reference") return "text-reference";
+  if (kind === "font-reference") return "typography-glyph-reference";
+  if (kind === "color-reference") return "typography-color-reference";
+  if (kind === "layout-reference") return "typography-layout-reference";
   if (kind === "side-background" || kind === "side-gift" || kind === "side-talent") return "side-content";
   if (kind === "typography" || kind === "typography-draft") return "generated-typography";
   return kind;
@@ -2007,7 +2003,9 @@ function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
     bottom: { zh: "下贴", en: "Bottom stickers" },
     side: { zh: "侧贴", en: "Side stickers" },
     "generation-reference": { zh: "生图参考", en: "Generation references" },
-    "text-reference": { zh: "文字图参考", en: "Typography references" },
+    "typography-glyph-reference": { zh: "文字字形参考", en: "Typography glyph references" },
+    "typography-color-reference": { zh: "文字颜色质感参考", en: "Typography colour / material references" },
+    "typography-layout-reference": { zh: "文字排版参考", en: "Typography layout references" },
     "side-content": { zh: "侧贴内容素材", en: "Side sticker content" },
     "generated-typography": { zh: "生成的文字图层", en: "Generated typography" },
   };

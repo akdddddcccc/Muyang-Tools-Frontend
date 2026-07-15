@@ -135,8 +135,6 @@
 .generation-action-row p { margin: 0; color: #aabbb0; font-size: 11px; line-height: 1.55; }
 .background-generation-actions { flex-wrap: wrap; }
 .background-generation-actions p { flex: 1 1 260px; }
-.asset-collection { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
-.asset-collection img { width: 98px; height: 76px; object-fit: cover; border: 1px solid #2d3a43; border-radius: 5px; }
 .tool-output-preview { margin-top: 30px; padding-top: 18px; border-top: 1px solid #26313a; }
 .output-preview-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .output-preview-heading p { margin: 0; color: #7bf89c; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
