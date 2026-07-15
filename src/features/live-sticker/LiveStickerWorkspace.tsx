@@ -1415,6 +1415,15 @@ function ExportTool({ language, assets, composition }: { language: "zh" | "en"; 
 
   return (
     <ToolFrame eyebrow="05 / EXPORT ASSETS" title={isEnglish ? "One-click composition export" : "一键导出资产"} detail={isEnglish ? "Visible sticker layers from the composition preview are selected by default. The ZIP also includes a flattened 1080 × 1920 preview image." : "默认勾选效果融合预览窗口中当前显示的贴片图层；导出的 ZIP 会额外包含一张 1080 × 1920 预览效果图。"}>
+      <div className="export-primary-card">
+        <div>
+          <span>{isEnglish ? "COMPOSITION PACKAGE" : "效果融合默认包"}</span>
+          <strong>{isEnglish ? `${selectedCount} selected layers + preview` : `${selectedCount} 个已选贴片图层 + 预览效果图`}</strong>
+          <small>{isEnglish ? "Exports visible sticker PNG layers and the current 1080 × 1920 composition preview." : "导出可见贴片 PNG 图层，以及当前 1080 × 1920 效果融合预览图。"}</small>
+        </div>
+        <button type="button" disabled={(!selectedCount && !composition.layers.some((layer) => layer.visible)) || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export composition package" : "一键导出效果融合资产包")}</button>
+        <p>{exportMessage || (isEnglish ? "Ready to export the default composition package." : "默认资产包已就绪，可直接导出。")}</p>
+      </div>
       <div className="export-list">
         {assets.length === 0 ? <p className="empty-copy">{isEnglish ? "There are no project assets to export." : "还没有可导出的项目资产。"}</p> : exportGroups.map((group) => (
           <section className="export-asset-group" key={group.category}>
@@ -1452,9 +1461,8 @@ function ExportTool({ language, assets, composition }: { language: "zh" | "en"; 
         <button type="button" disabled={isExporting} onClick={() => setSelectedAssetIds(new Set(defaultAssetIds))}>{isEnglish ? "Use visible layers" : "恢复预览默认项"}</button>
         <button type="button" disabled={!assets.length || isExporting} onClick={() => setSelectedAssetIds(new Set(assets.map((asset) => asset.id)))}>{isEnglish ? "Select all" : "全选"}</button>
         <button type="button" disabled={!selectedCount || isExporting} onClick={() => setSelectedAssetIds(new Set())}>{isEnglish ? "Clear" : "清空"}</button>
-        <button type="button" disabled={(!selectedCount && !composition.layers.some((layer) => layer.visible)) || isExporting} onClick={() => void exportSelected()}>{isExporting ? (isEnglish ? "Exporting..." : "正在导出…") : (isEnglish ? "Export composition package" : "一键导出效果融合资产包")}</button>
         <label className="advanced-option"><input type="checkbox" disabled /> {isEnglish ? "Project configuration JSON (advanced later)" : "项目配置 JSON（后期高级功能）"}</label>
-        <small className="export-message">{exportMessage || (isEnglish ? "Hidden composition layers are excluded from the default package." : "小眼睛关闭的图层不会进入默认包；直播间底图只参与预览合成。")}</small>
+        <small className="export-message">{isEnglish ? "Hidden composition layers are excluded from the default package." : "小眼睛关闭的图层不会进入默认包；直播间底图只参与预览合成。"}</small>
       </div>
     </ToolFrame>
   );
