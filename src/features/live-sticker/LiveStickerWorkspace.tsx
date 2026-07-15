@@ -1,5 +1,5 @@
 import { ChangeEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent } from "react";
-import { createBackgroundJob, createTypographyJob, cutoutTypography, fetchBackgroundJob, fetchCoreHealth, fetchTypographyJob, getCoreBaseUrl, type BackgroundGenerationJob, type BackgroundKind, type CoreHealth, type ImageReferenceInput, type TypographyGenerationJob } from "../../lib/core-api";
+import { createBackgroundJob, createTypographyJob, fetchBackgroundJob, fetchCoreHealth, fetchTypographyJob, getCoreBaseUrl, type BackgroundGenerationJob, type BackgroundKind, type CoreHealth, type ImageReferenceInput, type TypographyGenerationJob } from "../../lib/core-api";
 import {
   assetKindLabels,
   COMPOSITION_OUTPUT,
@@ -190,6 +190,7 @@ export function LiveStickerWorkspace({
             canUndo={canUndo}
             canRedo={canRedo}
             onAddAsset={addAsset}
+            onRemoveAsset={removeAsset}
             onReuseAsset={reuseAsset}
             onSelectLayer={selectLayer}
             onUpdateLayer={updateLayer}
@@ -281,6 +282,7 @@ function ToolPanel({
   canUndo,
   canRedo,
   onAddAsset,
+  onRemoveAsset,
   onReuseAsset,
   onSelectLayer,
   onUpdateLayer,
@@ -304,6 +306,7 @@ function ToolPanel({
   canUndo: boolean;
   canRedo: boolean;
   onAddAsset: (file: File, kind: ProjectAssetKind) => Promise<ProjectAsset>;
+  onRemoveAsset: (assetId: string) => void;
   onReuseAsset: (assetId: string, kind: ProjectAssetKind) => Promise<ProjectAsset>;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, patch: Partial<Pick<CompositionLayer, "x" | "y" | "width" | "height" | "opacity" | "visible" | "mask">>) => void;
@@ -328,7 +331,7 @@ function ToolPanel({
     return <SideStickerTool language={language} assets={assets} settings={sideSticker} onSettingsChange={onSideStickerChange} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onComplete={onOpenComposition} projectReady={projectReady} />;
   }
   if (activeTool === "composition") {
-    return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
+    return <CompositionTool language={language} assets={assets} composition={composition} onAddAsset={onAddAsset} onRemoveAsset={onRemoveAsset} onReuseAsset={onReuseAsset} onSelectLayer={onSelectLayer} onUpdateLayer={onUpdateLayer} onUpdateLayerMask={onUpdateLayerMask} onBeginCompositionInteraction={onBeginCompositionInteraction} onEndCompositionInteraction={onEndCompositionInteraction} onUndo={onUndo} onRedo={onRedo} canUndo={canUndo} canRedo={canRedo} projectReady={projectReady} />;
   }
   return <ExportTool language={language} assets={assets} composition={composition} />;
 }
@@ -465,9 +468,9 @@ function TypographyTool({ language, assets, onAddAsset, onReuseAsset, projectRea
     setIsCuttingOut(true);
     setCutoutMessage(isEnglish ? "Removing the solid matte..." : "正在抠除实底…");
     try {
-      const payload = await cutoutTypography(await assetReference(draft));
-      await onAddAsset(await resultFile(payload.result, `typography-${Date.now()}.png`), "typography");
-      setCutoutMessage(isEnglish ? "Transparent PNG added to the project." : "透明 PNG 已加入当前项目与融合画板。");
+      const result = await cutoutTypographyLocally(draft.blob);
+      await onAddAsset(new File([result.blob], `typography-${Date.now()}.png`, { type: "image/png" }), "typography");
+      setCutoutMessage(isEnglish ? `Transparent PNG added locally (${result.matte} matte).` : `已在浏览器本地抠除${result.matte === "white" ? "白" : "黑"}底，透明 PNG 已加入项目与融合画板。`);
     } catch (error) {
       setCutoutMessage(error instanceof Error ? error.message : (isEnglish ? "Cutout failed." : "文字抠图失败。"));
     } finally {
@@ -768,6 +771,7 @@ function CompositionTool({
   assets,
   composition,
   onAddAsset,
+  onRemoveAsset,
   onReuseAsset,
   onSelectLayer,
   onUpdateLayer,
@@ -782,6 +786,7 @@ function CompositionTool({
 }: ToolProps & {
   language: "zh" | "en";
   composition: CompositionDocument;
+  onRemoveAsset: (assetId: string) => void;
   onSelectLayer: (layerId: string) => void;
   onUpdateLayer: (layerId: string, patch: Partial<Pick<CompositionLayer, "x" | "y" | "width" | "height" | "opacity" | "visible" | "mask">>) => void;
   onUpdateLayerMask: (layerId: string, update: (mask: CompositionLayer["mask"]) => CompositionLayer["mask"]) => void;
@@ -804,6 +809,18 @@ function CompositionTool({
   const typographyLayer = canvasLayers.find((item) => item.layer.kind === "typography")?.layer;
   const sideLayer = canvasLayers.find((item) => item.layer.kind === "side")?.layer;
   const bottomTypographyLayer = canvasLayers.find((item) => item.layer.kind === "bottom-typography")?.layer;
+  const isEnglish = language === "en";
+  const bottomTypographyRequest = useRef(0);
+  const bottomTypographyGeneratedKey = useRef("");
+  const bottomTypographySourceKey = useMemo(() => {
+    const layers = composition.layers.filter((layer) => layer.kind !== "bottom-typography");
+    const layerAssetIds = new Set(layers.map((layer) => layer.assetId));
+    const colorSourceKinds = new Set<ProjectAssetKind>(["top", "bottom", "reference", "side-background", "base-image"]);
+    const sourceAssets = assets
+      .filter((asset) => layerAssetIds.has(asset.id) || colorSourceKinds.has(asset.kind))
+      .map((asset) => ({ id: asset.id, kind: asset.kind, createdAt: asset.createdAt, sizeBytes: asset.sizeBytes }));
+    return JSON.stringify({ layers, sourceAssets });
+  }, [assets, composition.layers]);
 
   useEffect(() => {
     const handleHistoryShortcut = (event: KeyboardEvent) => {
@@ -825,7 +842,30 @@ function CompositionTool({
     return () => window.removeEventListener("keydown", handleHistoryShortcut);
   }, [canRedo, canUndo, onRedo, onUndo]);
 
-  const isEnglish = language === "en";
+  useEffect(() => {
+    if (!bottomTypographyLayer?.visible || bottomTypographyGeneratedKey.current === bottomTypographySourceKey) return;
+    bottomTypographyGeneratedKey.current = bottomTypographySourceKey;
+    const request = ++bottomTypographyRequest.current;
+    const previousAssetId = bottomTypographyLayer.assetId;
+    setBottomTypographyBusy(true);
+    setBottomTypographyMessage(isEnglish ? "Adapting bottom text to its local background…" : "正在根据底部文字实际位置重新适配颜色…");
+    void renderBottomTypographyAsset(assets, composition)
+      .then(async (file) => {
+        if (request !== bottomTypographyRequest.current) return;
+        await onAddAsset(file, "bottom-typography");
+        onRemoveAsset(previousAssetId);
+        setBottomTypographyMessage(isEnglish ? "Bottom text colour updated from the local background." : "下贴文字已按局部背景重新选择偏黑、纯白或鲜艳主题色。");
+      })
+      .catch((error) => {
+        if (request !== bottomTypographyRequest.current) return;
+        bottomTypographyGeneratedKey.current = "";
+        setBottomTypographyMessage(error instanceof Error ? error.message : (isEnglish ? "Could not update bottom typography." : "下贴文字颜色更新失败。"));
+      })
+      .finally(() => {
+        if (request === bottomTypographyRequest.current) setBottomTypographyBusy(false);
+      });
+  }, [bottomTypographyLayer?.visible, bottomTypographySourceKey]);
+
   const toggleBottomTypography = async () => {
     if (bottomTypographyLayer) {
       const visible = !bottomTypographyLayer.visible;
@@ -838,7 +878,8 @@ function CompositionTool({
     setBottomTypographyBusy(true);
     setBottomTypographyMessage(isEnglish ? "Preparing the bottom typography layer…" : "正在生成下贴文字图层…");
     try {
-      await onAddAsset(await renderBottomTypographyAsset(assets), "bottom-typography");
+      bottomTypographyGeneratedKey.current = bottomTypographySourceKey;
+      await onAddAsset(await renderBottomTypographyAsset(assets, composition), "bottom-typography");
       setBottomTypographyMessage(isEnglish ? "Bottom typography added at its fixed export position." : "下贴文字图层已按固定位置置入，并加入导出资产。");
     } catch (error) {
       setBottomTypographyMessage(error instanceof Error ? error.message : (isEnglish ? "Could not create the bottom typography layer." : "下贴文字图层生成失败。"));
@@ -1911,6 +1952,90 @@ function drawContainedImage(context: CanvasRenderingContext2D, image: HTMLImageE
   context.restore();
 }
 
+async function cutoutTypographyLocally(source: Blob): Promise<{ matte: "white" | "black"; blob: Blob }> {
+  if (source.type && source.type !== "image/png") throw new Error("文字抠图只支持 PNG 实底稿。");
+  const bitmap = await createImageBitmap(source);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    bitmap.close();
+    throw new Error("浏览器无法创建本地抠图画布。");
+  }
+  context.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const { width, height, data } = image;
+  const edgeLuminance: number[] = [];
+  const sampleEdge = (x: number, y: number) => {
+    const index = (y * width + x) * 4;
+    edgeLuminance.push(.2126 * data[index] + .7152 * data[index + 1] + .0722 * data[index + 2]);
+  };
+  const stepX = Math.max(1, Math.floor(width / 48));
+  const stepY = Math.max(1, Math.floor(height / 48));
+  for (let x = 0; x < width; x += stepX) { sampleEdge(x, 0); sampleEdge(x, height - 1); }
+  for (let y = 0; y < height; y += stepY) { sampleEdge(0, y); sampleEdge(width - 1, y); }
+  const matte: "white" | "black" = edgeLuminance.reduce((sum, value) => sum + value, 0) / Math.max(1, edgeLuminance.length) < 128 ? "black" : "white";
+
+  const total = width * height;
+  const visited = new Uint8Array(total);
+  const queue = new Uint32Array(total);
+  const matchesMatte = (pixel: number) => {
+    const index = pixel * 4;
+    const maximum = Math.max(data[index], data[index + 1], data[index + 2]);
+    const minimum = Math.min(data[index], data[index + 1], data[index + 2]);
+    return matte === "black" ? maximum <= 30 && maximum - minimum <= 26 : minimum >= 230 && maximum - minimum <= 26;
+  };
+  let head = 0;
+  let tail = 0;
+  const enqueue = (x: number, y: number, marker: 1 | 2) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const pixel = y * width + x;
+    if (visited[pixel] || !matchesMatte(pixel)) return;
+    visited[pixel] = marker;
+    queue[tail++] = pixel;
+  };
+  for (let x = 0; x < width; x += 1) { enqueue(x, 0, 1); enqueue(x, height - 1, 1); }
+  for (let y = 0; y < height; y += 1) { enqueue(0, y, 1); enqueue(width - 1, y, 1); }
+  while (head < tail) {
+    const pixel = queue[head++];
+    const x = pixel % width;
+    const y = Math.floor(pixel / width);
+    enqueue(x + 1, y, 1); enqueue(x - 1, y, 1); enqueue(x, y + 1, 1); enqueue(x, y - 1, 1);
+  }
+
+  const minimumHoleArea = Math.max(6, Math.round(total * .000008));
+  for (let seed = 0; seed < total; seed += 1) {
+    if (visited[seed] || !matchesMatte(seed)) continue;
+    head = 0;
+    tail = 0;
+    visited[seed] = 2;
+    queue[tail++] = seed;
+    while (head < tail) {
+      const pixel = queue[head++];
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      enqueue(x + 1, y, 2); enqueue(x - 1, y, 2); enqueue(x, y + 1, 2); enqueue(x, y - 1, 2);
+    }
+    if (tail < minimumHoleArea) {
+      for (let index = 0; index < tail; index += 1) visited[queue[index]] = 3;
+    }
+  }
+
+  for (let pixel = 0; pixel < total; pixel += 1) {
+    if (visited[pixel] !== 1 && visited[pixel] !== 2) continue;
+    const index = pixel * 4;
+    const channel = matte === "black"
+      ? Math.max(data[index], data[index + 1], data[index + 2])
+      : 255 - Math.min(data[index], data[index + 1], data[index + 2]);
+    data[index + 3] = Math.max(0, Math.min(255, Math.round((channel - 5) * 12)));
+  }
+  context.putImageData(image, 0, 0);
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("本地文字抠图导出失败。")), "image/png"));
+  return { matte, blob };
+}
+
 async function sampleAssetColor(blob: Blob) {
   const bitmap = await createImageBitmap(blob);
   const canvas = document.createElement("canvas");
@@ -1941,8 +2066,9 @@ async function sampleAssetColor(blob: Blob) {
 
 const BOTTOM_TYPOGRAPHY_TEXT = "让每个孩子拥有实验室";
 const BOTTOM_TYPOGRAPHY_FONT = '"MF BoHeHaiYan"';
+const BOTTOM_TYPOGRAPHY_GEOMETRY = { x: 16.4815, y: 89.6875, width: 67.037, height: 7.8125 } as const;
 
-async function renderBottomTypographyAsset(assets: ProjectAsset[]) {
+async function renderBottomTypographyAsset(assets: ProjectAsset[], composition: CompositionDocument) {
   await document.fonts.load(`400 120px ${BOTTOM_TYPOGRAPHY_FONT}`, BOTTOM_TYPOGRAPHY_TEXT);
   const latest = (kinds: ProjectAssetKind[]) => [...assets].reverse().find((asset) => kinds.includes(asset.kind));
   const surfaceAsset = latest(["bottom", "base-image"]);
@@ -1952,9 +2078,10 @@ async function renderBottomTypographyAsset(assets: ProjectAsset[]) {
   const vividColor = mixHex(createVividAccent(themeColor), "#071013", .14);
   const darkColor = mixHex(themeColor, "#071013", .82);
   const whiteColor = "#ffffff";
-  const textColor = contrastRatio(surfaceColor, vividColor) >= 3
-    ? vividColor
-    : contrastRatio(surfaceColor, darkColor) >= contrastRatio(surfaceColor, whiteColor) ? darkColor : whiteColor;
+  const backgroundCanvas = await renderCompositionCanvas(composition, assets, new Set<CompositionLayer["kind"]>(["bottom-typography"]));
+  const existingLayer = composition.layers.find((layer) => layer.kind === "bottom-typography");
+  const geometry = existingLayer ?? BOTTOM_TYPOGRAPHY_GEOMETRY;
+  const textColor = chooseBottomTypographyColor(backgroundCanvas, geometry, { vivid: vividColor, dark: darkColor, white: whiteColor }, surfaceColor);
 
   const scratch = document.createElement("canvas");
   scratch.width = 1200;
@@ -2008,6 +2135,37 @@ async function renderBottomTypographyAsset(assets: ProjectAsset[]) {
   outputContext.drawImage(scratch, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
   const blob = await new Promise<Blob>((resolve, reject) => output.toBlob((value) => value ? resolve(value) : reject(new Error("无法导出下贴文字图层 PNG。")), "image/png"));
   return new File([blob], "下贴文字图层.png", { type: "image/png" });
+}
+
+function chooseBottomTypographyColor(
+  background: HTMLCanvasElement,
+  geometry: Pick<CompositionLayer, "x" | "y" | "width" | "height">,
+  candidates: { vivid: string; dark: string; white: string },
+  fallbackSurface: string,
+) {
+  const sample = document.createElement("canvas");
+  sample.width = 72;
+  sample.height = 16;
+  const context = sample.getContext("2d", { willReadFrequently: true });
+  if (!context) return contrastRatio(fallbackSurface, candidates.dark) >= contrastRatio(fallbackSurface, candidates.white) ? candidates.dark : candidates.white;
+  const sourceX = (geometry.x / 100) * background.width;
+  const sourceY = (geometry.y / 100) * background.height;
+  const sourceWidth = (geometry.width / 100) * background.width;
+  const sourceHeight = (geometry.height / 100) * background.height;
+  context.drawImage(background, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, sample.width, sample.height);
+  const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+  const scores = Object.fromEntries(Object.entries(candidates).map(([name, color]) => {
+    const ratios: number[] = [];
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index + 3] < 32) continue;
+      ratios.push(contrastRatio(rgbToHex(pixels[index], pixels[index + 1], pixels[index + 2]), color));
+    }
+    if (!ratios.length) return [name, contrastRatio(fallbackSurface, color)];
+    ratios.sort((first, second) => first - second);
+    return [name, ratios[Math.floor((ratios.length - 1) * .12)]];
+  })) as Record<keyof typeof candidates, number>;
+  if (scores.vivid >= 4.5) return candidates.vivid;
+  return scores.dark >= scores.white ? candidates.dark : candidates.white;
 }
 
 function rgbToHex(red: number, green: number, blue: number) {
@@ -2139,7 +2297,7 @@ function assetCategoryLabel(category: AssetCategory, language: "zh" | "en") {
   return labels[category][language];
 }
 
-async function renderCompositionPreview(composition: CompositionDocument, assets: ProjectAsset[]) {
+async function renderCompositionCanvas(composition: CompositionDocument, assets: ProjectAsset[], excludedKinds = new Set<CompositionLayer["kind"]>()) {
   const canvas = document.createElement("canvas");
   canvas.width = COMPOSITION_OUTPUT.width;
   canvas.height = COMPOSITION_OUTPUT.height;
@@ -2149,7 +2307,7 @@ async function renderCompositionPreview(composition: CompositionDocument, assets
   context.imageSmoothingQuality = "high";
 
   const visibleLayers = composition.layers
-    .filter((layer) => layer.visible)
+    .filter((layer) => layer.visible && !excludedKinds.has(layer.kind))
     .slice()
     .sort((first, second) => first.zIndex - second.zIndex);
 
@@ -2189,6 +2347,11 @@ async function renderCompositionPreview(composition: CompositionDocument, assets
     context.restore();
   }
 
+  return canvas;
+}
+
+async function renderCompositionPreview(composition: CompositionDocument, assets: ProjectAsset[]) {
+  const canvas = await renderCompositionCanvas(composition, assets);
   return new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("无法导出效果融合预览图。")), "image/png"));
 }
 
