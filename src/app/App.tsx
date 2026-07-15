@@ -35,7 +35,6 @@ export function App() {
         language={language}
         onLanguageChange={setLanguage}
         onOpenHome={() => undefined}
-        onOpenLiveSticker={() => undefined}
       />
     );
   }
@@ -56,7 +55,6 @@ export function App() {
         language={language}
         onLanguageChange={setLanguage}
         onOpenHome={() => openWorkspace("home")}
-        onOpenLiveSticker={() => openWorkspace("live-sticker")}
       />
     );
   }
@@ -66,7 +64,6 @@ export function App() {
       language={language}
       onLanguageChange={setLanguage}
       onOpenHome={() => openWorkspace("home")}
-      onOpenTaskMap={() => openWorkspace("task-map")}
     />
   );
 }

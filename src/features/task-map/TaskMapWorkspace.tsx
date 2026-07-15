@@ -437,7 +437,7 @@ function MindBezierEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps<
 const mindNodeTypes = { mindTask: MindMapNode };
 const mindEdgeTypes = { mindBezier: MindBezierEdge };
 
-export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChange, onOpenHome, onOpenLiveSticker }: { desktopMode?: boolean; language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void; onOpenLiveSticker: () => void }) {
+export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChange, onOpenHome }: { desktopMode?: boolean; language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void }) {
   const isEnglish = language === "en";
   const [tasks, setTasks] = useState<TaskNode[]>(loadInitialTasks);
   const [selectedId, setSelectedId] = useState("goal");
@@ -1668,7 +1668,6 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
           ) : (
             <>
               <button type="button" onClick={onOpenHome}>{isEnglish ? "Toolkit" : "工具主页"}</button>
-              <button type="button" onClick={onOpenLiveSticker}>{isEnglish ? "Live Sticker" : "直播贴片"}</button>
               <a className="task-windows-download" href="https://github.com/akdddddcccc/Muyang-Tools-Frontend/releases/latest" target="_blank" rel="noreferrer">
                 {isEnglish ? "Windows app" : "Windows 版"}
               </a>

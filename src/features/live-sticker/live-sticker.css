@@ -30,10 +30,6 @@
 .sidebar-note { margin-top: auto; padding: 12px; border: 1px solid #26313a; border-radius: 7px; background: #0d141a; }
 .sidebar-note span { color: #7bf89c; font-size: 11px; font-weight: 700; }
 .sidebar-note p { margin: 6px 0 0; color: #89a195; font-size: 11px; line-height: 1.5; }
-.workspace-jump { display: grid; gap: 5px; margin-top: 8px; padding: 12px; text-align: left; color: #edf4ef; background: #0b1015; border: 1px solid #2d3a43; border-radius: 7px; cursor: pointer; }
-.workspace-jump:hover { color: #7bf89c; border-color: #7bf89c; background: #102217; }
-.workspace-jump strong { font-size: 12px; }
-.workspace-jump small { color: #89a195; font-size: 11px; line-height: 1.45; }
 .tool-canvas { padding: 20px clamp(24px, 4vw, 56px) 56px; }
 .asset-rail { display: flex; align-items: flex-start; gap: 14px; min-height: 58px; margin-bottom: 22px; padding: 9px 0 12px; border-bottom: 1px solid #26313a; }
 .asset-rail p { margin: 0 0 5px; color: #7bf89c; }

@@ -76,12 +76,10 @@ export function LiveStickerWorkspace({
   language,
   onLanguageChange,
   onOpenHome,
-  onOpenTaskMap,
 }: {
   language: "zh" | "en";
   onLanguageChange: (language: "zh" | "en") => void;
   onOpenHome?: () => void;
-  onOpenTaskMap?: () => void;
 }) {
   const [activeTool, setActiveTool] = useState<ToolId>("background");
   const {
@@ -179,12 +177,6 @@ export function LiveStickerWorkspace({
             <span>{isEnglish ? "PROJECT ASSETS" : "当前项目资产"}</span>
             <p>{assets.length} {isEnglish ? "local assets. " : "个本地素材。"}{isEnglish ? persistenceCopyEn(persistenceState) : persistenceCopy(persistenceState)}</p>
           </div>
-          {onOpenTaskMap ? (
-            <button className="workspace-jump" type="button" onClick={onOpenTaskMap}>
-              <strong>{isEnglish ? "Task Gantt" : "任务甘特图"}</strong>
-              <small>{isEnglish ? "Structure and schedule planning" : "结构拆解与时间规划"}</small>
-            </button>
-          ) : null}
         </aside>
 
         <section className="tool-canvas">
