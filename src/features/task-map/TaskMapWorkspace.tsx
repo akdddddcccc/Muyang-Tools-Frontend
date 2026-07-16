@@ -1274,6 +1274,36 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     URL.revokeObjectURL(url);
   };
 
+  const printHtmlAsPdf = (html: string) => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.position = "fixed";
+    frame.style.inset = "0";
+    frame.style.width = "1px";
+    frame.style.height = "1px";
+    frame.style.border = "0";
+    frame.style.opacity = "0";
+    frame.style.pointerEvents = "none";
+
+    const removeFrame = () => window.setTimeout(() => frame.remove(), 300);
+    frame.addEventListener("load", () => {
+      const printWindow = frame.contentWindow;
+      if (!printWindow) {
+        frame.remove();
+        setMessage(isEnglish ? "Unable to open the PDF print dialog." : "无法打开 PDF 打印窗口，请检查浏览器打印权限。");
+        return;
+      }
+      printWindow.addEventListener("afterprint", removeFrame, { once: true });
+      window.setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+        window.setTimeout(removeFrame, 60_000);
+      }, 180);
+    }, { once: true });
+    frame.srcdoc = html;
+    document.body.appendChild(frame);
+  };
+
   const renderTodoItems = (task: TaskNode, depth = 0): string => {
     const children = childrenByParent.get(task.id) ?? [];
     return `
@@ -1331,16 +1361,8 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       });
       return;
     }
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      downloadHtml(`muyang-task-map-todo-${new Date().toISOString().slice(0, 10)}.html`, html);
-      setMessage(isEnglish ? "Popup blocked. Downloaded a printable todo HTML instead." : "浏览器拦截了打印窗口，已改为下载可打印清单 HTML。");
-      return;
-    }
-    printWindow.addEventListener("load", () => setTimeout(() => printWindow.print(), 180), { once: true });
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
+    printHtmlAsPdf(html);
+    setMessage(isEnglish ? "Choose Save as PDF in the print dialog." : "请在打印窗口中选择“另存为 PDF”。");
   };
 
   const renderMindMapNode = (task: TaskNode, depth = 0): string => {
