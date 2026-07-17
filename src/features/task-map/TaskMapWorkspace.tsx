@@ -1304,23 +1304,34 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     document.body.appendChild(frame);
   };
 
-  const renderTodoItems = (task: TaskNode, depth = 0): string => {
+  const collectTodoItems = (task: TaskNode, depth = 0): Array<{ task: TaskNode; depth: number }> => {
     const children = childrenByParent.get(task.id) ?? [];
-    return `
-      <li style="--depth:${depth}">
-        <div class="todo-line">
-          <span class="box"></span>
-          <div>
-            <strong>${escapeHtml(task.title)}</strong>
-            <small>${formatDay(task.startDay)} - ${formatDay(task.endDay)}</small>
-            ${task.note ? `<p>${escapeHtml(task.note)}</p>` : ""}
-          </div>
-        </div>
-        ${children.length ? `<ol>${children.map((child) => renderTodoItems(child, depth + 1)).join("")}</ol>` : ""}
-      </li>`;
+    return [
+      { task, depth },
+      ...children.flatMap((child) => collectTodoItems(child, depth + 1)),
+    ];
   };
 
   const exportTodoPdf = () => {
+    const descendants = collectTodoItems(root).slice(1);
+    const todoItems = descendants.length ? descendants : [{ task: root, depth: 0 }];
+    const itemCount = todoItems.length;
+    const columnCount = itemCount <= 12 ? 2 : itemCount <= 30 ? 3 : itemCount <= 60 ? 4 : 5;
+    const density = itemCount <= 18 ? "normal" : itemCount <= 48 ? "compact" : "dense";
+    const todoRows = todoItems.map(({ task, depth }) => `
+      <li style="--depth:${Math.min(depth, 5)}">
+        <div class="todo-line">
+          <span class="box"></span>
+          <div class="copy">
+            <div class="todo-head">
+              <span class="level">L${depth}</span>
+              <strong>${escapeHtml(task.title)}</strong>
+              <small>${formatDay(task.startDay)} - ${formatDay(task.endDay)}</small>
+            </div>
+            ${task.note ? `<p>${escapeHtml(task.note)}</p>` : ""}
+          </div>
+        </div>
+      </li>`).join("");
     const html = `<!doctype html>
 <html lang="${language}">
 <head>
@@ -1328,28 +1339,42 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   <title>${escapeHtml(root.title)} - Todo PDF</title>
   <style>
     *{box-sizing:border-box}
-    body{margin:0;padding:32px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
-    header{margin-bottom:28px;padding-bottom:18px;border-bottom:2px solid #101418}
-    p.eyebrow{margin:0 0 8px;color:#16a05c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
-    h1{margin:0;font-size:28px;line-height:1.2}
-    ol{margin:0;padding-left:0;list-style:none}
-    li{break-inside:avoid;margin:0 0 8px}
-    li ol{margin-top:8px;margin-left:26px;padding-left:18px;border-left:1px solid #d8e2dc}
-    .todo-line{display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:start;padding:9px 0}
-    .box{display:block;width:14px;height:14px;margin-top:3px;border:1.5px solid #101418;border-radius:2px}
-    strong{font-size:14px;line-height:1.35}
-    small{display:block;margin-top:3px;color:#60746a;font:10px ui-monospace,SFMono-Regular,Menlo,monospace}
-    .todo-line p{margin:5px 0 0;color:#44564d;font-size:12px;line-height:1.5}
-    @page{size:A4;margin:18mm}
-    @media print{body{padding:0}.no-print{display:none}}
+    :root{--columns:${columnCount};--row-gap:5px;--title-size:11px;--meta-size:8px;--note-size:8.5px}
+    body.compact{--row-gap:3px;--title-size:9.5px;--meta-size:7px;--note-size:7.5px}
+    body.dense{--row-gap:2px;--title-size:8px;--meta-size:6.5px;--note-size:6.5px}
+    body{margin:0;padding:24px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
+    header{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:10px;padding-bottom:9px;border-bottom:1.5px solid #101418}
+    p.eyebrow{margin:0 0 4px;color:#16a05c;font:8px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
+    h1{margin:0;font-size:20px;line-height:1.1}
+    .summary{flex:none;text-align:right;color:#60746a;font:8px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+    .summary strong{display:block;color:#101418;font-size:11px}
+    ol{margin:0;padding:0;list-style:none}
+    .todo-grid{column-count:var(--columns);column-gap:7mm;column-rule:1px solid #e2e9e5}
+    li{break-inside:avoid;margin:0 0 var(--row-gap);padding-left:calc(var(--depth) * 5px)}
+    .todo-line{display:grid;grid-template-columns:10px minmax(0,1fr);gap:5px;align-items:start;padding:3px 0;border-bottom:1px solid #edf1ef}
+    .box{display:block;width:8px;height:8px;margin-top:2px;border:1px solid #101418;border-radius:1px}
+    .copy{min-width:0}
+    .todo-head{display:flex;align-items:baseline;gap:4px;min-width:0}
+    .level{flex:none;color:#16a05c;font:700 var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+    strong{min-width:0;font-size:var(--title-size);line-height:1.15}
+    small{flex:none;margin-left:auto;color:#60746a;font:var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+    .todo-line p{overflow:hidden;margin:2px 0 0;color:#44564d;font-size:var(--note-size);line-height:1.2;white-space:nowrap;text-overflow:ellipsis}
+    @page{size:A4 landscape;margin:8mm}
+    @media print{body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style>
 </head>
-<body>
+<body class="${density}">
   <header>
-    <p class="eyebrow">MUYANG TASK MAP / TODO LIST</p>
-    <h1>${escapeHtml(root.title)}</h1>
+    <div>
+      <p class="eyebrow">MUYANG TASK MAP / ONE-PAGE TODO</p>
+      <h1>${escapeHtml(root.title)}</h1>
+    </div>
+    <div class="summary">
+      <strong>${itemCount} TASKS</strong>
+      ${formatDay(root.startDay)} - ${formatDay(root.endDay)} · ${columnCount} COLUMNS
+    </div>
   </header>
-  <ol>${renderTodoItems(root)}</ol>
+  <ol class="todo-grid">${todoRows}</ol>
 </body>
 </html>`;
     if (desktopMode && window.taskMapDesktop) {
