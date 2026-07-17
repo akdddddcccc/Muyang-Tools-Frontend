@@ -1314,11 +1314,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
 
   const renderTodoBranch = (task: TaskNode, depth: number): string => {
     const children = childrenByParent.get(task.id) ?? [];
-    const childColumns = depth === 1 && children.length >= 2
-      ? 2
-      : children.length >= 4
-        ? 2
-        : 1;
+    const childColumns = depth === 1 && children.length >= 2 ? 2 : 1;
     return `
       <li class="task-branch depth-${Math.min(depth, 4)}" style="--child-columns:${childColumns}">
         <div class="todo-line">
@@ -1327,9 +1323,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
             <div class="todo-head">
               <span class="level">L${depth}</span>
               <strong>${escapeHtml(task.title)}</strong>
-              <small>${formatDay(task.startDay)} - ${formatDay(task.endDay)}</small>
             </div>
-            ${task.note ? `<p>${escapeHtml(task.note)}</p>` : ""}
           </div>
         </div>
         ${children.length
@@ -1354,9 +1348,9 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   <title>${escapeHtml(root.title)} - Todo PDF</title>
   <style>
     *{box-sizing:border-box}
-    :root{--columns:${columnCount};--row-gap:7px;--title-size:12.5px;--meta-size:8.5px;--note-size:9.5px}
-    body.compact{--row-gap:5px;--title-size:11px;--meta-size:7.5px;--note-size:8.5px}
-    body.dense{--row-gap:3px;--title-size:9px;--meta-size:6.5px;--note-size:7px}
+    :root{--columns:${columnCount};--row-gap:7px;--title-size:12.5px;--meta-size:8.5px}
+    body.compact{--row-gap:5px;--title-size:11px;--meta-size:7.5px}
+    body.dense{--row-gap:3px;--title-size:9px;--meta-size:6.5px}
     body{margin:0;padding:24px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:10px;padding-bottom:9px;border-bottom:1.5px solid #101418}
     p.eyebrow{margin:0 0 4px;color:#16a05c;font:8px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
@@ -1375,11 +1369,11 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     .todo-line{display:grid;grid-template-columns:10px minmax(0,1fr);gap:5px;align-items:start;padding:3px 0}
     .box{display:block;width:8px;height:8px;margin-top:2px;border:1px solid #101418;border-radius:1px}
     .copy{min-width:0}
-    .todo-head{display:flex;align-items:baseline;gap:4px;min-width:0}
+    .todo-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;gap:4px;min-width:0}
     .level{flex:none;color:var(--level-color);font:700 var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace}
-    strong{min-width:0;font-size:var(--title-size);line-height:1.15}
-    small{flex:none;margin-left:auto;color:#60746a;font:var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
-    .todo-line p{overflow:hidden;margin:2px 0 0;color:#44564d;font-size:var(--note-size);line-height:1.2;white-space:nowrap;text-overflow:ellipsis}
+    strong{min-width:0;font-size:var(--title-size);line-height:1.15;word-break:keep-all;overflow-wrap:anywhere}
+    .depth-2>.todo-line strong{font-size:calc(var(--title-size) * .92)}
+    .depth-3>.todo-line strong,.depth-4>.todo-line strong{font-size:calc(var(--title-size) * .82)}
     @page{size:A4 landscape;margin:8mm}
     @media print{body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style>
