@@ -1312,14 +1312,15 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     ];
   };
 
-  const exportTodoPdf = () => {
-    const descendants = collectTodoItems(root).slice(1);
-    const todoItems = descendants.length ? descendants : [{ task: root, depth: 0 }];
-    const itemCount = todoItems.length;
-    const columnCount = itemCount <= 12 ? 2 : itemCount <= 30 ? 3 : itemCount <= 60 ? 4 : 5;
-    const density = itemCount <= 18 ? "normal" : itemCount <= 48 ? "compact" : "dense";
-    const todoRows = todoItems.map(({ task, depth }) => `
-      <li style="--depth:${Math.min(depth, 5)}">
+  const renderTodoBranch = (task: TaskNode, depth: number): string => {
+    const children = childrenByParent.get(task.id) ?? [];
+    const childColumns = depth === 1 && children.length >= 2
+      ? 2
+      : children.length >= 4
+        ? 2
+        : 1;
+    return `
+      <li class="task-branch depth-${Math.min(depth, 4)}" style="--child-columns:${childColumns}">
         <div class="todo-line">
           <span class="box"></span>
           <div class="copy">
@@ -1331,7 +1332,21 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
             ${task.note ? `<p>${escapeHtml(task.note)}</p>` : ""}
           </div>
         </div>
-      </li>`).join("");
+        ${children.length
+          ? `<ol class="task-children">${children.map((child) => renderTodoBranch(child, depth + 1)).join("")}</ol>`
+          : ""}
+      </li>`;
+  };
+
+  const exportTodoPdf = () => {
+    const descendants = collectTodoItems(root).slice(1);
+    const rootBranches = childrenByParent.get(root.id) ?? [];
+    const itemCount = descendants.length || 1;
+    const columnCount = rootBranches.length <= 1 ? 1 : rootBranches.length <= 4 ? 2 : 3;
+    const density = itemCount <= 18 ? "normal" : itemCount <= 48 ? "compact" : "dense";
+    const todoRows = rootBranches.length
+      ? rootBranches.map((task) => renderTodoBranch(task, 1)).join("")
+      : renderTodoBranch(root, 0);
     const html = `<!doctype html>
 <html lang="${language}">
 <head>
@@ -1339,9 +1354,9 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   <title>${escapeHtml(root.title)} - Todo PDF</title>
   <style>
     *{box-sizing:border-box}
-    :root{--columns:${columnCount};--row-gap:5px;--title-size:11px;--meta-size:8px;--note-size:8.5px}
-    body.compact{--row-gap:3px;--title-size:9.5px;--meta-size:7px;--note-size:7.5px}
-    body.dense{--row-gap:2px;--title-size:8px;--meta-size:6.5px;--note-size:6.5px}
+    :root{--columns:${columnCount};--row-gap:7px;--title-size:12.5px;--meta-size:8.5px;--note-size:9.5px}
+    body.compact{--row-gap:5px;--title-size:11px;--meta-size:7.5px;--note-size:8.5px}
+    body.dense{--row-gap:3px;--title-size:9px;--meta-size:6.5px;--note-size:7px}
     body{margin:0;padding:24px;color:#101418;background:#fff;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",Arial,sans-serif}
     header{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;margin-bottom:10px;padding-bottom:9px;border-bottom:1.5px solid #101418}
     p.eyebrow{margin:0 0 4px;color:#16a05c;font:8px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
@@ -1349,13 +1364,19 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     .summary{flex:none;text-align:right;color:#60746a;font:8px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
     .summary strong{display:block;color:#101418;font-size:11px}
     ol{margin:0;padding:0;list-style:none}
-    .todo-grid{column-count:var(--columns);column-gap:7mm;column-rule:1px solid #e2e9e5}
-    li{break-inside:avoid;margin:0 0 var(--row-gap);padding-left:calc(var(--depth) * 5px)}
-    .todo-line{display:grid;grid-template-columns:10px minmax(0,1fr);gap:5px;align-items:start;padding:3px 0;border-bottom:1px solid #edf1ef}
+    .todo-grid{display:grid;grid-template-columns:repeat(var(--columns),minmax(0,1fr));gap:5mm 7mm;align-items:start}
+    .task-branch{--level-color:#8aa097;position:relative;min-width:0;break-inside:avoid;margin:0 0 var(--row-gap)}
+    .task-branch.depth-1{--level-color:#16a05c}
+    .task-branch.depth-2{--level-color:#2697c7}
+    .task-branch.depth-3{--level-color:#b38a00}
+    .todo-grid>.task-branch{padding-top:4px;border-top:2px solid var(--level-color)}
+    .task-children{display:grid;grid-template-columns:repeat(var(--child-columns),minmax(0,1fr));gap:var(--row-gap) 6px;margin:4px 0 0 6px;padding:2px 0 0 7px;border-left:1.5px solid #b9c8c0}
+    .task-children>.task-branch{padding-left:5px;border-left:1px solid var(--level-color)}
+    .todo-line{display:grid;grid-template-columns:10px minmax(0,1fr);gap:5px;align-items:start;padding:3px 0}
     .box{display:block;width:8px;height:8px;margin-top:2px;border:1px solid #101418;border-radius:1px}
     .copy{min-width:0}
     .todo-head{display:flex;align-items:baseline;gap:4px;min-width:0}
-    .level{flex:none;color:#16a05c;font:700 var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace}
+    .level{flex:none;color:var(--level-color);font:700 var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace}
     strong{min-width:0;font-size:var(--title-size);line-height:1.15}
     small{flex:none;margin-left:auto;color:#60746a;font:var(--meta-size)/1 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
     .todo-line p{overflow:hidden;margin:2px 0 0;color:#44564d;font-size:var(--note-size);line-height:1.2;white-space:nowrap;text-overflow:ellipsis}
