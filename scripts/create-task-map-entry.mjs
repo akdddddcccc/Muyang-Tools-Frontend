@@ -10,3 +10,4 @@ mkdirSync(dirname(taskMapEntry), { recursive: true });
 copyFileSync(liveStickerEntry, taskMapEntry);
 copyFileSync(join("public", "robots.txt"), join("dist", "robots.txt"));
 copyFileSync(join("public", "sitemap.xml"), join("dist", "sitemap.xml"));
+copyFileSync(join("public", "favicon.svg"), join("dist", "favicon.svg"));
