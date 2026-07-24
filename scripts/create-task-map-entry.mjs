@@ -8,3 +8,5 @@ const taskMapEntry = join("dist", "task-map", "index.html");
 copyFileSync(liveStickerEntry, homeEntry);
 mkdirSync(dirname(taskMapEntry), { recursive: true });
 copyFileSync(liveStickerEntry, taskMapEntry);
+copyFileSync(join("public", "robots.txt"), join("dist", "robots.txt"));
+copyFileSync(join("public", "sitemap.xml"), join("dist", "sitemap.xml"));
