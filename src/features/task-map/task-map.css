@@ -1201,6 +1201,24 @@
   background: rgba(123, 248, 156, .055);
 }
 
+.task-gantt-row.preview {
+  background: repeating-linear-gradient(135deg, rgba(123, 248, 156, .045) 0 8px, rgba(123, 248, 156, .09) 8px 16px);
+  border-bottom-color: rgba(123, 248, 156, .34);
+}
+
+.task-gantt-row.preview .task-gantt-track {
+  box-shadow: inset 0 0 0 1px rgba(123, 248, 156, .16);
+}
+
+.task-gantt-grid.has-track-preview .task-gantt-row:not(.preview) {
+  animation: task-gantt-row-shift .22s ease both;
+}
+
+@keyframes task-gantt-row-shift {
+  from { transform: translateY(-10px); opacity: .68; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 .task-gantt-label {
   position: sticky;
   left: 0;
@@ -1350,6 +1368,13 @@
   filter: grayscale(.9);
   border-color: rgba(255, 148, 148, .72);
   box-shadow: 0 0 0 1px rgba(255, 148, 148, .22);
+}
+
+.task-bar-ghost.new-track {
+  opacity: .88;
+  border-color: rgba(231, 255, 88, .86);
+  background: color-mix(in srgb, var(--task-bar-bg) 52%, transparent);
+  box-shadow: 0 0 0 1px rgba(231, 255, 88, .34), 0 0 28px var(--task-bar-shadow);
 }
 
 .task-bar span {
