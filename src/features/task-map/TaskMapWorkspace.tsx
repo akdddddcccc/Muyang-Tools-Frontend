@@ -15,6 +15,8 @@ type DragState = {
   originalStart: number;
   originalEnd: number;
   originalLane: number;
+  grabOffsetX: number;
+  grabOffsetY: number;
   activated: boolean;
   changed: boolean;
 };
@@ -30,6 +32,9 @@ type TimelineDragPreview = {
   endDay: number;
   targetRowId: string;
   validTarget: boolean;
+  createNewTrack?: boolean;
+  newLane?: number;
+  collisionTaskId?: string;
 };
 
 type FullscreenPanel = TaskPhase | null;
@@ -385,6 +390,123 @@ function normalizeTimelineTasks(tasks: TaskNode[]) {
   return includeAncestorRanges(nextTasks);
 }
 
+function moveTaskToNewSiblingLane(tasks: TaskNode[], taskId: string, newLane: number) {
+  const task = tasks.find((item) => item.id === taskId);
+  if (!task || !task.parentId) return tasks;
+  const siblingIds = new Set(tasks
+    .filter((item) => item.parentId === task.parentId && item.id !== taskId)
+    .map((item) => item.id));
+  const nextTasks = tasks.map((item) => {
+    if (item.id === taskId) return { ...item, lane: newLane };
+    if (item.parentId === task.parentId && item.lane >= newLane) return { ...item, lane: item.lane + 1 };
+    return item;
+  });
+  return nextTasks.map((item) => {
+    if (item.id === taskId) {
+      const dependsOn = item.dependsOn?.filter((dependencyId) => !siblingIds.has(dependencyId));
+      return { ...item, dependsOn: dependsOn?.length ? dependsOn : undefined };
+    }
+    if (item.parentId === task.parentId && item.dependsOn?.includes(taskId)) {
+      const dependsOn = item.dependsOn.filter((dependencyId) => dependencyId !== taskId);
+      return { ...item, dependsOn: dependsOn.length ? dependsOn : undefined };
+    }
+    return item;
+  });
+}
+
+function isTaskDescendant(taskId: string, ancestorId: string, tasksById: Map<string, TaskNode>) {
+  let current = tasksById.get(taskId);
+  const visited = new Set<string>();
+  while (current?.parentId && !visited.has(current.id)) {
+    if (current.parentId === ancestorId) return true;
+    visited.add(current.id);
+    current = tasksById.get(current.parentId);
+  }
+  return false;
+}
+
+function getTaskDescendantIds(taskId: string, tasks: TaskNode[]) {
+  const descendants = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    tasks.forEach((task) => {
+      if (!task.parentId || descendants.has(task.id)) return;
+      if (task.parentId === taskId || descendants.has(task.parentId)) {
+        descendants.add(task.id);
+        changed = true;
+      }
+    });
+  }
+  return descendants;
+}
+
+function getTaskLaneBounds(task: TaskNode, tasks: TaskNode[]) {
+  const siblings = tasks
+    .filter((candidate) => candidate.parentId === task.parentId && Math.round(candidate.lane) === Math.round(task.lane) && candidate.id !== task.id)
+    .sort((left, right) => left.startDay - right.startDay || left.endDay - right.endDay);
+  const previous = [...siblings].reverse().find((candidate) => candidate.endDay < task.startDay);
+  const next = siblings.find((candidate) => candidate.startDay > task.endDay);
+  return {
+    minStart: previous ? previous.endDay + 1 : -36500,
+    maxEnd: next ? next.startDay - 1 : 36500,
+  };
+}
+
+function shiftTaskSubtree(tasks: TaskNode[], taskId: string, delta: number, lane?: number) {
+  const descendants = getTaskDescendantIds(taskId, tasks);
+  return tasks.map((task) => {
+    if (task.id !== taskId && !descendants.has(task.id)) return task;
+    return {
+      ...task,
+      startDay: task.startDay + delta,
+      endDay: task.endDay + delta,
+      ...(task.id === taskId && lane !== undefined ? { lane } : {}),
+    };
+  });
+}
+
+function resizeTaskSubtree(tasks: TaskNode[], taskId: string, proposedStart: number, proposedEnd: number) {
+  const task = tasks.find((candidate) => candidate.id === taskId);
+  if (!task) return tasks;
+  const children = tasks.filter((candidate) => candidate.parentId === taskId);
+  const parent = task.parentId ? tasks.find((candidate) => candidate.id === task.parentId) : undefined;
+  const parentBounds = parent ? getTaskLaneBounds(parent, tasks) : { minStart: -36500, maxEnd: 36500 };
+  const nextStart = clamp(proposedStart, parentBounds.minStart, Math.min(proposedEnd - minDuration, parentBounds.maxEnd - minDuration));
+  const nextEnd = clamp(proposedEnd, nextStart + minDuration, parentBounds.maxEnd);
+
+  if (!children.length) {
+    if (!parent) return tasks.map((candidate) => candidate.id === taskId ? { ...candidate, startDay: nextStart, endDay: nextEnd } : candidate);
+    const childStart = clamp(nextStart, parent.startDay, parent.endDay - minDuration);
+    const childEnd = clamp(nextEnd, childStart + minDuration, parent.endDay);
+    const expandedStart = Math.min(parent.startDay, nextStart);
+    const expandedEnd = Math.max(parent.endDay, nextEnd);
+    const canExpand = expandedStart >= parentBounds.minStart && expandedEnd <= parentBounds.maxEnd;
+    const finalParentStart = canExpand ? expandedStart : parent.startDay;
+    const finalParentEnd = canExpand ? expandedEnd : parent.endDay;
+    const finalChildStart = canExpand ? nextStart : clamp(childStart, finalParentStart, finalParentEnd - minDuration);
+    const finalChildEnd = canExpand ? nextEnd : clamp(childEnd, finalChildStart + minDuration, finalParentEnd);
+    return tasks.map((candidate) => {
+      if (candidate.id === taskId) return { ...candidate, startDay: finalChildStart, endDay: finalChildEnd };
+      if (candidate.id === parent.id) return { ...candidate, startDay: finalParentStart, endDay: finalParentEnd };
+      return candidate;
+    });
+  }
+
+  const oldSpan = Math.max(1, task.endDay - task.startDay);
+  const nextSpan = Math.max(1, nextEnd - nextStart);
+  const descendants = getTaskDescendantIds(taskId, tasks);
+  return tasks.map((candidate) => {
+    if (candidate.id === taskId) return { ...candidate, startDay: nextStart, endDay: nextEnd };
+    if (!descendants.has(candidate.id)) return candidate;
+    const scaledStart = Math.round(nextStart + ((candidate.startDay - task.startDay) / oldSpan) * nextSpan);
+    const scaledEnd = Math.round(nextStart + ((candidate.endDay - task.startDay) / oldSpan) * nextSpan);
+    const startDay = clamp(scaledStart, nextStart, nextEnd - minDuration);
+    const endDay = clamp(Math.max(scaledEnd, startDay + minDuration), startDay + minDuration, nextEnd);
+    return { ...candidate, startDay, endDay };
+  });
+}
+
 function firstLevelBranch(task: TaskNode, root: TaskNode, tasks: TaskNode[]) {
   if (task.id === root.id) return root;
   let cursor = task;
@@ -490,7 +612,7 @@ const mindEdgeTypes = { mindBezier: MindBezierEdge };
 
 export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChange, onOpenHome }: { desktopMode?: boolean; language: Language; onLanguageChange: (language: Language) => void; onOpenHome: () => void }) {
   const isEnglish = language === "en";
-  const [tasks, setTasks] = useState<TaskNode[]>(loadInitialTasks);
+  const [tasks, setTasks] = useState<TaskNode[]>(() => normalizeTimelineTasks(loadInitialTasks()));
   const [selectedId, setSelectedId] = useState("goal");
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>(["goal"]);
   const [phase, setPhase] = useState<TaskPhase>("structure");
@@ -583,6 +705,24 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       )),
     [ganttLaneHostByTaskId, ganttTrackKeyByTaskId, visibleTasks],
   );
+  const ganttRowsForRender = useMemo(() => {
+    const preview = timelineDragPreview;
+    if (!preview?.createNewTrack || preview.newLane === undefined) return ganttRows;
+    const sourceTask = visibleTasks.find((task) => task.id === preview.id);
+    if (!sourceTask) return ganttRows;
+    const sourceHostId = ganttLaneHostByTaskId.get(sourceTask.id) ?? sourceTask.id;
+    const sourceIndex = ganttRows.findIndex((task) => task.id === sourceHostId);
+    const previewRow = {
+      ...sourceTask,
+      id: `__preview-track__${sourceTask.id}`,
+      lane: preview.newLane,
+      title: sourceTask.title,
+    };
+    const collisionHostId = preview.collisionTaskId ? ganttLaneHostByTaskId.get(preview.collisionTaskId) : undefined;
+    const collisionIndex = collisionHostId ? ganttRows.findIndex((task) => task.id === collisionHostId) : -1;
+    const insertIndex = collisionIndex > sourceIndex ? collisionIndex : Math.max(0, sourceIndex + 1);
+    return [...ganttRows.slice(0, insertIndex), previewRow, ...ganttRows.slice(insertIndex)];
+  }, [ganttLaneHostByTaskId, ganttRows, timelineDragPreview, visibleTasks]);
 
   const totalStart = Math.min(...tasks.map((task) => task.startDay), 0);
   const totalEnd = Math.max(...tasks.map((task) => task.endDay), 120);
@@ -637,7 +777,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     if (!node) return;
     const updateChartMetrics = () => {
       setChartWidth(node.clientWidth || 1440);
-      const rowCount = Math.max(1, ganttRows.length);
+      const rowCount = Math.max(1, ganttRowsForRender.length);
       const availableRowsHeight = Math.max(0, node.clientHeight - 34);
       const needsVerticalScroll = minGanttRowHeight * rowCount > availableRowsHeight + 2;
       setGanttNeedsVerticalScroll(needsVerticalScroll);
@@ -647,7 +787,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     const observer = new ResizeObserver(updateChartMetrics);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [ganttRows.length, phase]);
+  }, [ganttRowsForRender.length, phase]);
 
   useEffect(() => {
     const syncFullscreenState = () => setFullscreenPanel(readFullscreenPanel());
@@ -715,12 +855,13 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     if (result.canceled || !result.content) return;
     try {
       const project = parseTaskMapProjectDocument(result.content);
+      const normalizedTasks = normalizeTimelineTasks(project.tasks);
       const state: TaskMapProjectState = {
-        tasks: project.tasks,
+        tasks: normalizedTasks,
         nodePositions: project.nodePositions,
         view: project.view,
       };
-      setTasks(project.tasks);
+      setTasks(normalizedTasks);
       setNodePositions(project.nodePositions);
       setSelectedId(project.view.selectedId);
       setSelectedNodeIds([project.view.selectedId]);
@@ -730,7 +871,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       setProjectPath(result.path);
       setProjectCreatedAt(project.createdAt);
       setSavedProjectState(projectStateSnapshot(state));
-      window.localStorage.setItem(storageKey, JSON.stringify(project.tasks));
+      window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
       setMessage(isEnglish ? "Project opened." : "项目已打开。");
       window.requestAnimationFrame(() => mindFlowRef.current?.fitView({ padding: 0.18, duration: 420 }));
     } catch {
@@ -1144,12 +1285,50 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     });
   };
 
+  const getTimelineCollision = (event: React.PointerEvent, task: TaskNode, drag: DragState) => {
+    const tasksById = new Map(latestTasksRef.current.map((item) => [item.id, item]));
+    const sourceBar = chartRef.current?.querySelector(`[data-task-bar="${task.id}"]`) as HTMLElement | null;
+    const sourceRect = sourceBar?.getBoundingClientRect();
+    if (!sourceRect) return undefined;
+    const virtualRect = {
+      left: event.clientX - drag.grabOffsetX,
+      right: event.clientX - drag.grabOffsetX + sourceRect.width,
+      top: event.clientY - drag.grabOffsetY,
+      bottom: event.clientY - drag.grabOffsetY + sourceRect.height,
+    };
+    const padding = 10;
+    return visibleTasks.find((candidate) => {
+      if (candidate.id === task.id || candidate.parentId !== task.parentId || isTaskDescendant(candidate.id, task.id, tasksById)) return false;
+      const candidateBar = chartRef.current?.querySelector(`[data-task-bar="${candidate.id}"]`) as HTMLElement | null;
+      const candidateRect = candidateBar?.getBoundingClientRect();
+      if (!candidateRect) return false;
+      return virtualRect.left <= candidateRect.right + padding
+        && virtualRect.right >= candidateRect.left - padding
+        && virtualRect.top <= candidateRect.bottom + padding
+        && virtualRect.bottom >= candidateRect.top - padding;
+    });
+  };
+
   const beginDrag = (event: React.PointerEvent, task: TaskNode, mode: DragState["mode"]) => {
     if (mode !== "move") event.preventDefault();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    const bar = (event.currentTarget as HTMLElement).closest("[data-task-bar]") as HTMLElement | null;
+    const barRect = bar?.getBoundingClientRect();
     if (dragHoldTimerRef.current) window.clearTimeout(dragHoldTimerRef.current);
     setTimelineDragPreview(null);
-    dragRef.current = { id: task.id, mode, startX: event.clientX, startY: event.clientY, originalStart: task.startDay, originalEnd: task.endDay, originalLane: task.lane, activated: mode !== "move", changed: false };
+    dragRef.current = {
+      id: task.id,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      originalStart: task.startDay,
+      originalEnd: task.endDay,
+      originalLane: task.lane,
+      grabOffsetX: barRect ? event.clientX - barRect.left : 0,
+      grabOffsetY: barRect ? event.clientY - barRect.top : 0,
+      activated: mode !== "move",
+      changed: false,
+    };
     if (mode === "move") {
       dragHoldTimerRef.current = window.setTimeout(() => {
         if (dragRef.current?.id === task.id && dragRef.current.mode === "move") {
@@ -1189,20 +1368,28 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       startDay = clamp(drag.originalStart + delta, minStart, maxEnd - duration);
       endDay = startDay + duration;
       const target = getDropTarget(event.clientY);
-      const validTarget = Boolean(target && target.id !== task.id && target.parentId === task.parentId);
+      const collisionTask = getTimelineCollision(event, task, drag);
+      const validTarget = !collisionTask && Boolean(target && target.id !== task.id && target.parentId === task.parentId);
+      const createNewTrack = Boolean(collisionTask);
+      const newLane = createNewTrack
+        ? collisionTask && collisionTask.parentId === task.parentId ? Math.max(0, Math.round(collisionTask.lane)) : Math.max(0, Math.round(task.lane) + 1)
+        : undefined;
       setTimelineDragPreview({
         id: task.id,
         startDay,
         endDay,
         targetRowId: target?.id ?? task.id,
         validTarget,
+        createNewTrack,
+        newLane,
+        collisionTaskId: collisionTask?.id,
       });
-      lane = validTarget && target ? target.lane : task.lane;
+      lane = validTarget && target ? target.lane : createNewTrack && newLane !== undefined ? newLane : task.lane;
     }
     const changed = startDay !== task.startDay || endDay !== task.endDay || lane !== task.lane;
     if (changed) dragRef.current = { ...drag, changed: true };
     if (drag.mode === "move") return;
-    const nextTasks = includeAncestorRanges(currentTasks.map((item) => item.id === task.id ? { ...item, startDay, endDay, lane } : item));
+    const nextTasks = resizeTaskSubtree(currentTasks, task.id, startDay, endDay);
     latestTasksRef.current = nextTasks;
     setTasks(nextTasks);
   };
@@ -1235,10 +1422,24 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       const preview = timelineDragPreview;
       if (task && drag.mode === "move" && preview) {
         const target = visibleTasks.find((row) => row.id === preview.targetRowId);
-        nextTasks = currentTasks.map((item) => item.id === task.id
-          ? { ...item, startDay: preview.startDay, endDay: preview.endDay, lane: preview.validTarget && target ? target.lane : item.lane }
-          : item);
-        if (preview.validTarget && target && target.parentId === task.parentId) {
+        if (preview.createNewTrack && preview.newLane !== undefined) {
+          const separatedTasks = moveTaskToNewSiblingLane(currentTasks, task.id, preview.newLane);
+          nextTasks = shiftTaskSubtree(
+            separatedTasks,
+            task.id,
+            preview.startDay - task.startDay,
+            preview.newLane,
+          );
+          setMessage(isEnglish ? "Task separated into a new track; the previous relation was removed." : "已插入独立轨道，并解除原来的继起关系。");
+        } else {
+          nextTasks = shiftTaskSubtree(
+            currentTasks,
+            task.id,
+            preview.startDay - task.startDay,
+            preview.validTarget && target ? target.lane : task.lane,
+          );
+        }
+        if (!preview.createNewTrack && preview.validTarget && target && target.parentId === task.parentId) {
           nextTasks = applySequentialLaneDependencies(nextTasks, task.parentId, target.lane);
           setMessage(isEnglish ? "Same-level tasks linked in sequence." : "已将同级任务拖入同一轨道，并生成承接关系。");
         }
@@ -1255,8 +1456,19 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
 
   const toggleTaskById = useCallback((taskId: string) => {
     const task = tasks.find((item) => item.id === taskId);
-    if (task) updateTask(taskId, { collapsed: !task.collapsed });
-  }, [tasks]);
+    if (!task) return;
+    const trackKey = ganttTrackKeyByTaskId.get(taskId);
+    const groupedIds = new Set(
+      tasks
+        .filter((item) => {
+          if (!childrenByParent.get(item.id)?.length) return false;
+          return item.id === taskId || (trackKey && ganttTrackKeyByTaskId.get(item.id) === trackKey);
+        })
+        .map((item) => item.id),
+    );
+    const collapsed = !task.collapsed;
+    persist(tasks.map((item) => groupedIds.has(item.id) ? { ...item, collapsed } : item));
+  }, [childrenByParent, ganttTrackKeyByTaskId, tasks]);
 
   const selectRelativeTask = useCallback((direction: "up" | "down" | "parent" | "child") => {
     const index = visibleTasks.findIndex((task) => task.id === selected.id);
@@ -1712,6 +1924,96 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     downloadHtml(`muyang-task-map-gantt-${new Date().toISOString().slice(0, 10)}.html`, html);
   };
 
+  const exportTodayTaskListHtml = () => {
+    const todayDay = 0;
+    const todayLabel = formatDay(todayDay);
+    const localDate = new Date();
+    const isoDate = [
+      localDate.getFullYear(),
+      String(localDate.getMonth() + 1).padStart(2, "0"),
+      String(localDate.getDate()).padStart(2, "0"),
+    ].join("-");
+    const isTaskOnToday = (task: TaskNode) => task.startDay <= todayDay && task.endDay >= todayDay;
+    const hasTodayDescendant = (task: TaskNode): boolean => (childrenByParent.get(task.id) ?? [])
+      .some((child) => isTaskOnToday(child) || hasTodayDescendant(child));
+    let dailyItemIndex = 0;
+    const renderDailyBranch = (task: TaskNode, depth: number): string => {
+      const active = isTaskOnToday(task);
+      const children = (childrenByParent.get(task.id) ?? [])
+        .filter((child) => isTaskOnToday(child) || hasTodayDescendant(child));
+      if (!active && !children.length) return "";
+      const itemId = `daily-${dailyItemIndex += 1}`;
+      const content = active
+        ? `<label class="task-item" data-task-item><input type="checkbox" data-task-id="${itemId}" /><span class="task-title">${escapeHtml(task.title)}</span><small>${formatDay(task.startDay)} - ${formatDay(task.endDay)}</small></label>`
+        : `<div class="context-item"><span class="context-mark">↳</span><span class="task-title">${escapeHtml(task.title)}</span><small>上下文任务</small></div>`;
+      return `<li class="depth-${Math.min(depth, 6)}">${content}${children.length ? `<ul>${children.map((child) => renderDailyBranch(child, depth + 1)).join("")}</ul>` : ""}</li>`;
+    };
+    const rootChildren = childrenByParent.get(root.id) ?? [];
+    const dailyRows = rootChildren
+      .filter((task) => isTaskOnToday(task) || hasTodayDescendant(task))
+      .map((task) => renderDailyBranch(task, 0))
+      .join("");
+    const activeCount = collectTodoItems(root).filter(({ task }) => task.id !== root.id && isTaskOnToday(task)).length;
+    const html = `<!doctype html>
+<html lang="${language}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(root.title)} - ${todayLabel} Task List</title>
+  <style>
+    *{box-sizing:border-box}
+    :root{color-scheme:dark}
+    body{margin:0;min-height:100vh;padding:28px;background:#0b1015;color:#edf4ef;font-family:Inter,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif}
+    main{width:min(900px,100%);margin:0 auto}
+    header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:22px 24px;margin-bottom:18px;border:1px solid #26313a;border-radius:12px;background:linear-gradient(120deg,rgba(123,248,156,.13),transparent 56%),#10171d;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+    .eyebrow{margin:0 0 8px;color:#7bf89c;font:11px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em}
+    h1{margin:0;font-size:clamp(24px,5vw,40px);line-height:1.15}
+    .date{color:#d7ff58;font:700 18px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;color:#89a195;font-size:13px}
+    .toolbar button{padding:7px 10px;color:#cfe2d6;background:#111a21;border:1px solid #2d3a43;border-radius:6px;cursor:pointer}
+    .toolbar button:hover{border-color:#7bf89c;color:#7bf89c}
+    .list{margin:0;padding:18px 22px;border:1px solid #26313a;border-radius:12px;background:#10171d}
+    ul{margin:0;padding-left:24px;list-style:none}
+    .list>ul{padding-left:0}
+    li{position:relative;margin:7px 0}
+    li::before{content:"";position:absolute;left:-14px;top:18px;width:9px;height:1px;background:#375045}
+    .task-item,.context-item{display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:9px;min-height:42px;padding:8px 10px;border-radius:7px}
+    .task-item{cursor:pointer;background:rgba(123,248,156,.045);border:1px solid rgba(123,248,156,.14)}
+    .task-item:hover{border-color:rgba(123,248,156,.5);background:rgba(123,248,156,.08)}
+    .task-item input{width:16px;height:16px;accent-color:#7bf89c}
+    .task-title{font-size:15px;font-weight:700;line-height:1.35}
+    .task-item small,.context-item small{color:#71877c;font:10px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+    .task-item.done{opacity:.48}
+    .task-item.done .task-title{text-decoration:line-through;text-decoration-thickness:2px}
+    .context-item{grid-template-columns:20px minmax(0,1fr) auto;color:#8ea096;background:rgba(255,255,255,.025);border:1px dashed rgba(113,135,124,.28)}
+    .context-mark{color:#7bf89c;font-size:17px}
+    .empty{padding:28px 12px;color:#89a195;text-align:center;border:1px dashed #375045;border-radius:8px}
+    footer{margin-top:16px;color:#5e756a;font-size:11px;text-align:center}
+    @media (max-width:640px){body{padding:16px}header{align-items:flex-start;flex-direction:column}.date{font-size:15px}.task-item,.context-item{grid-template-columns:20px minmax(0,1fr)}.task-item small,.context-item small{grid-column:2}}
+  </style>
+</head>
+<body>
+  <main>
+    <header><div><p class="eyebrow">MUYANG TASK MAP / TODAY</p><h1>${escapeHtml(root.title)}</h1></div><strong class="date">${todayLabel}</strong></header>
+    <div class="toolbar"><span>${isEnglish ? `${activeCount} tasks scheduled today` : `今日 ${activeCount} 项任务`}</span><button type="button" data-reset>清空完成状态</button></div>
+    <section class="list">${dailyRows ? `<ul>${dailyRows}</ul>` : `<div class="empty">今天没有安排任务</div>`}</section>
+    <footer>任务日期来自甘特图；勾选状态只保存在此导出文件的本地浏览器中。</footer>
+  </main>
+  <script>
+    const storageKey = "muyang-task-map-today-${isoDate}";
+    const boxes = Array.from(document.querySelectorAll("input[data-task-id]"));
+    const readDone = () => { try { return new Set(JSON.parse(localStorage.getItem(storageKey) || "[]")); } catch { return new Set(); } };
+    const writeDone = (done) => localStorage.setItem(storageKey, JSON.stringify(Array.from(done)));
+    const syncItem = (box) => { const item = box.closest("[data-task-item]"); if (item) item.classList.toggle("done", box.checked); };
+    const done = readDone();
+    boxes.forEach((box) => { box.checked = done.has(box.dataset.taskId); syncItem(box); box.addEventListener("change", () => { if (box.checked) done.add(box.dataset.taskId); else done.delete(box.dataset.taskId); syncItem(box); writeDone(done); }); });
+    document.querySelector("[data-reset]")?.addEventListener("click", () => { boxes.forEach((box) => { box.checked = false; syncItem(box); }); writeDone(new Set()); });
+  </script>
+</body>
+</html>`;
+    downloadHtml(`muyang-task-map-today-${isoDate}.html`, html);
+  };
+
   const exportInteractiveTaskMapHtml = () => {
     const labelWidth = 280;
     const rowHeight = 46;
@@ -1917,6 +2219,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
             </button>
           </nav>
           <div className="task-export-actions">
+            <button type="button" onClick={exportTodayTaskListHtml}>{isEnglish ? "Today list" : "导出当日任务单"}</button>
             {desktopMode ? <span className="task-action-group-label">{isEnglish ? "Final output" : "成果导出"}</span> : null}
             <button type="button" onClick={exportTodoPdf}>{isEnglish ? "Export PDF" : "导出清单 PDF"}</button>
             <button type="button" onClick={exportInteractiveTaskMapHtml}>{isEnglish ? "Export HTML" : "导出交互 HTML"}</button>
@@ -1987,7 +2290,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                 selectedId={selected.id}
                 childrenByParent={childrenByParent}
                 onSelect={selectTask}
-                onToggle={(task) => updateTask(task.id, { collapsed: !task.collapsed })}
+                onToggle={(task) => toggleTaskById(task.id)}
               />
               <TaskEditor
                 isEnglish={isEnglish}
@@ -2071,7 +2374,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                 onPointerCancel={endDrag}
               >
                 <div
-                  className="task-gantt-grid"
+                  className={`task-gantt-grid${timelineDragPreview?.createNewTrack ? " has-track-preview" : ""}`}
                   style={{
                     width: trackViewportWidth,
                     minWidth: trackViewportWidth,
@@ -2090,26 +2393,37 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                       {timelineDays.map((day, index) => <b key={day}>{shouldShowTimelineTick(day, index, viewLength) ? formatTimelineTick(day, viewLength) : ""}</b>)}
                     </div>
                   </div>
-                  {ganttRows.map((task) => {
-                    const rowBars = visibleTasks
+                  {ganttRowsForRender.map((task) => {
+                    const previewRow = task.id.startsWith("__preview-track__");
+                    const rowBars = previewRow ? [] : visibleTasks
                       .filter((rowTask) => ganttLaneHostByTaskId.get(rowTask.id) === task.id)
                       .sort((a, b) => a.startDay - b.startDay || a.endDay - b.endDay);
                     const previewTask = timelineDragPreview?.targetRowId === task.id
                       ? tasks.find((candidate) => candidate.id === timelineDragPreview.id)
                       : undefined;
-                    const previewBarTask = previewTask ? (rowBars.find((candidate) => candidate.id === previewTask.id) ?? { ...previewTask, depth: task.depth }) : undefined;
+                    const previewTrackTask = previewRow && timelineDragPreview
+                      ? tasks.find((candidate) => candidate.id === timelineDragPreview.id)
+                      : undefined;
+                    const previewBarTask = previewTrackTask
+                      ? { ...previewTrackTask, lane: timelineDragPreview?.newLane ?? previewTrackTask.lane, depth: task.depth }
+                      : previewTask ? (rowBars.find((candidate) => candidate.id === previewTask.id) ?? { ...previewTask, depth: task.depth }) : undefined;
                     const rowSelected = task.id === selected.id || rowBars.some((rowTask) => rowTask.id === selected.id);
                     return (
-                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: trackViewportWidth }}>
+                      <div className={`task-gantt-row${rowSelected ? " selected" : ""}${previewRow ? " preview" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: trackViewportWidth }}>
                         <div className="task-gantt-track">
                           {task.dependsOn?.map((dependencyId) => <span className="task-dependency-dot" key={dependencyId} title={dependencyId} />)}
                           {rowBars.slice(1).map((rowTask, index) => {
                             const previousTask = rowBars[index];
                             const linkStart = (previousTask.endDay + 1 - viewStart) * timelineDayWidth;
                             const linkEnd = (rowTask.startDay - viewStart) * timelineDayWidth;
-                            const linkLeft = Math.min(linkStart, linkEnd);
-                            const linkWidth = Math.abs(linkEnd - linkStart);
-                            const linkClipped = previousTask.endDay < viewStart || rowTask.startDay > viewEnd || linkWidth < 10;
+                            const rawLinkLeft = Math.min(linkStart, linkEnd);
+                            const rawLinkWidth = Math.abs(linkEnd - linkStart);
+                            const linkWidth = Math.max(10, rawLinkWidth);
+                            const linkLeft = rawLinkWidth < 10 ? linkStart - (linkWidth - rawLinkWidth) / 2 : rawLinkLeft;
+                            const linkClipped = previousTask.endDay < viewStart
+                              || rowTask.startDay > viewEnd
+                              || linkLeft > trackViewportWidth
+                              || linkLeft + linkWidth < 0;
                             const hasExplicitDependency = rowTask.parentId === previousTask.parentId
                               && rowTask.dependsOn?.includes(previousTask.id);
                             const color = taskBarColor(rowTask);
@@ -2130,7 +2444,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                           })}
                           {previewBarTask && timelineDragPreview ? (
                             <div
-                              className={`task-bar task-bar-ghost depth-${Math.min(previewBarTask.depth, 3)}${timelineDragPreview.validTarget ? "" : " invalid"}`}
+                              className={`task-bar task-bar-ghost depth-${Math.min(previewBarTask.depth, 3)}${timelineDragPreview.validTarget ? "" : timelineDragPreview.createNewTrack ? " new-track" : " invalid"}`}
                               style={taskBarStyle(
                                 previewBarTask,
                                 (timelineDragPreview.startDay - viewStart) * timelineDayWidth,
@@ -2153,6 +2467,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                                 style={taskBarStyle(rowTask, left, width)}
                                 role="button"
                                 tabIndex={0}
+                                data-task-bar={rowTask.id}
                                 title={isEnglish ? "Click to tune schedule" : "点击微调时间或 AI 初排子任务"}
                                 onPointerDown={(event) => beginDrag(event, rowTask, "move")}
                                 onPointerMove={moveDrag}
@@ -2200,7 +2515,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                     setViewStart(clamp(Math.round(taskCenter - preferredWindow / 2), totalStart, maxStart));
                     setViewLength(preferredWindow);
                   }}
-                  onToggleChildren={() => updateTask(timelinePopoverTask.id, { collapsed: !timelinePopoverTask.collapsed })}
+                  onToggleChildren={() => toggleTaskById(timelinePopoverTask.id)}
                   onClose={() => setTimelinePopover(null)}
                 />
               ) : null}
