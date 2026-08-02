@@ -19,6 +19,19 @@ type DragState = {
   changed: boolean;
 };
 
+type TimelinePanState = {
+  startX: number;
+  startScrollLeft: number;
+};
+
+type TimelineDragPreview = {
+  id: string;
+  startDay: number;
+  endDay: number;
+  targetRowId: string;
+  validTarget: boolean;
+};
+
 type FullscreenPanel = TaskPhase | null;
 
 type MindNodeData = {
@@ -55,7 +68,9 @@ type TimelinePopoverState = {
 const storageKey = "muyang-task-map-project-v1";
 const minVisibleDays = 2;
 const minDuration = 2;
-const ganttRowHeight = 48;
+const defaultGanttRowHeight = 48;
+const minGanttRowHeight = 32;
+const maxGanttRowHeight = 104;
 const dragActivateDistance = 6;
 const branchHuePalette = [188, 172, 148, 112, 82, 58];
 
@@ -321,12 +336,47 @@ function compactSiblingLanes(tasks: TaskNode[], parentId: string | undefined) {
   });
 }
 
-function normalizeTimelineTasks(tasks: TaskNode[]) {
+function canonicalizeTimelineLanes(tasks: TaskNode[]) {
   const parentIds = new Set(tasks.map((task) => task.parentId));
   let nextTasks = tasks;
   parentIds.forEach((parentId) => {
     nextTasks = compactSiblingLanes(nextTasks, parentId);
   });
+  return nextTasks;
+}
+
+function getGanttTrackLane(task: TaskNode, tasksById: Map<string, TaskNode>): number {
+  if (!task.parentId) return 0;
+  const siblingLanes = [...new Set([...tasksById.values()]
+    .filter((sibling) => sibling.parentId === task.parentId)
+    .map((sibling) => Math.max(0, Math.round(sibling.lane))))]
+    .sort((a, b) => a - b);
+  const normalizedLane = siblingLanes.indexOf(Math.max(0, Math.round(task.lane)));
+  return normalizedLane < 0 ? 0 : normalizedLane;
+}
+
+function getGanttTrackKey(task: TaskNode, tasksById: Map<string, TaskNode>, rootId: string, trail = new Set<string>()): string {
+  if (task.id === rootId || !task.parentId || trail.has(task.id)) return "root";
+  const parent = tasksById.get(task.parentId);
+  if (!parent) return `orphan:${task.parentId}`;
+  const nextTrail = new Set(trail);
+  nextTrail.add(task.id);
+  return `${getGanttTrackKey(parent, tasksById, rootId, nextTrail)}:${getGanttTrackLane(task, tasksById)}`;
+}
+
+function compareGanttTrackKeys(leftKey: string, rightKey: string) {
+  const left = leftKey.split(":").slice(1).map((part) => Number.isFinite(Number(part)) ? Number(part) : -1);
+  const right = rightKey.split(":").slice(1).map((part) => Number.isFinite(Number(part)) ? Number(part) : -1);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (left[index] ?? -1) - (right[index] ?? -1);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+function normalizeTimelineTasks(tasks: TaskNode[]) {
+  let nextTasks = canonicalizeTimelineLanes(tasks);
   const laneKeys = new Set(nextTasks.map((task) => `${task.parentId ?? "__root__"}:${task.lane}`));
   laneKeys.forEach((key) => {
     const [parentKey, laneValue] = key.split(":");
@@ -373,6 +423,7 @@ const MindMapNode = memo(function MindMapNode({ data }: NodeProps<Node<MindNodeD
         <input
           className="mind-node-title-input nodrag"
           value={data.task.title}
+          data-task-title-id={data.task.id}
           aria-label="Task title"
           onFocus={(event) => {
             data.onSelect(data.task.id);
@@ -449,6 +500,10 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   const [viewStart, setViewStart] = useState(0);
   const [viewLength, setViewLength] = useState(60);
   const [chartWidth, setChartWidth] = useState(1440);
+  const [ganttRowHeight, setGanttRowHeight] = useState(defaultGanttRowHeight);
+  const [ganttNeedsVerticalScroll, setGanttNeedsVerticalScroll] = useState(false);
+  const [isTimelinePanning, setIsTimelinePanning] = useState(false);
+  const [timelineDragPreview, setTimelineDragPreview] = useState<TimelineDragPreview | null>(null);
   const [message, setMessage] = useState(isEnglish ? "Ready." : "已就绪。");
   const [isBusy, setIsBusy] = useState(false);
   const [timelinePopover, setTimelinePopover] = useState<TimelinePopoverState>(null);
@@ -464,6 +519,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   const mindFlowRef = useRef<ReactFlowInstance<Node<MindNodeData>, Edge> | null>(null);
   const ganttPanelRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const timelinePanRef = useRef<TimelinePanState | null>(null);
   const dragHoldTimerRef = useRef<number | null>(null);
   const latestTasksRef = useRef<TaskNode[]>(tasks);
 
@@ -496,10 +552,17 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   }, [tasks]);
 
   const visibleTasks = useMemo(() => collectVisibleTaskRows(root, childrenByParent), [childrenByParent, root]);
+  const ganttTrackKeyByTaskId = useMemo(() => {
+    const tasksById = new Map(canonicalizeTimelineLanes(tasks).map((task) => [task.id, task]));
+    return new Map(visibleTasks.map((task) => {
+      const canonicalTask = tasksById.get(task.id) ?? task;
+      return [task.id, getGanttTrackKey(canonicalTask, tasksById, root.id)] as const;
+    }));
+  }, [root.id, tasks, visibleTasks]);
   const ganttLaneHostByTaskId = useMemo(() => {
     const groups = new Map<string, Array<TaskNode & { depth: number }>>();
     visibleTasks.forEach((task) => {
-      const key = `${task.parentId ?? "root"}:${task.lane}`;
+      const key = ganttTrackKeyByTaskId.get(task.id) ?? `orphan:${task.id}`;
       const list = groups.get(key) ?? [];
       list.push(task);
       groups.set(key, list);
@@ -510,10 +573,15 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       group.forEach((task) => hosts.set(task.id, host.id));
     });
     return hosts;
-  }, [visibleTasks]);
+  }, [ganttTrackKeyByTaskId, visibleTasks]);
   const ganttRows = useMemo(
-    () => visibleTasks.filter((task) => ganttLaneHostByTaskId.get(task.id) === task.id),
-    [ganttLaneHostByTaskId, visibleTasks],
+    () => visibleTasks
+      .filter((task) => ganttLaneHostByTaskId.get(task.id) === task.id)
+      .sort((left, right) => compareGanttTrackKeys(
+        ganttTrackKeyByTaskId.get(left.id) ?? "root",
+        ganttTrackKeyByTaskId.get(right.id) ?? "root",
+      )),
+    [ganttLaneHostByTaskId, ganttTrackKeyByTaskId, visibleTasks],
   );
 
   const totalStart = Math.min(...tasks.map((task) => task.startDay), 0);
@@ -544,10 +612,20 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
 
   const taskBarStyle = (task: TaskNode & { depth: number }, left: number, width: number): CSSProperties => {
     const color = taskBarColor(task);
+    const barHeight = clamp(ganttRowHeight - 14, 26, maxGanttRowHeight - 14);
+    const textWidthUnits = [...task.title].reduce((total, character) => total + (character.charCodeAt(0) > 255 ? 1 : 0.62), 0);
+    const widthBasedFontSize = (width - 24) / Math.max(1, textWidthUnits);
+    const heightBasedFontSize = barHeight * 0.38;
+    const fontSize = clamp(Math.min(widthBasedFontSize, heightBasedFontSize), 10, 22);
+    const textPadding = clamp(barHeight * 0.24, 7, 18);
     return {
       left,
       width,
-      top: 8 + task.lane * 3,
+      top: (ganttRowHeight - barHeight) / 2,
+      height: barHeight,
+      lineHeight: `${Math.max(1.1, Math.min(1.35, barHeight / Math.max(1, fontSize * 1.8))).toFixed(2)}`,
+      fontSize,
+      "--task-bar-text-padding": `${textPadding}px`,
       "--task-bar-bg": color.bg,
       "--task-bar-border": color.border,
       "--task-bar-shadow": color.shadow,
@@ -557,12 +635,19 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   useEffect(() => {
     const node = chartRef.current;
     if (!node) return;
-    const updateWidth = () => setChartWidth(node.clientWidth || 1440);
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
+    const updateChartMetrics = () => {
+      setChartWidth(node.clientWidth || 1440);
+      const rowCount = Math.max(1, ganttRows.length);
+      const availableRowsHeight = Math.max(0, node.clientHeight - 34);
+      const needsVerticalScroll = minGanttRowHeight * rowCount > availableRowsHeight + 2;
+      setGanttNeedsVerticalScroll(needsVerticalScroll);
+      setGanttRowHeight(clamp(Math.floor(availableRowsHeight / rowCount), minGanttRowHeight, maxGanttRowHeight));
+    };
+    updateChartMetrics();
+    const observer = new ResizeObserver(updateChartMetrics);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [phase]);
+  }, [ganttRows.length, phase]);
 
   useEffect(() => {
     const syncFullscreenState = () => setFullscreenPanel(readFullscreenPanel());
@@ -617,7 +702,11 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   }, [root.id, root.endDay]);
 
   const persist = (nextTasks: TaskNode[]) => {
-    const normalizedTasks = includeAncestorRanges(nextTasks);
+    // Keep lane slots canonical whenever the tree changes. A parent can be
+    // moved to another visual track before its first child is created; if we
+    // only expand ancestor dates here, the new child keeps a stale/sparse lane
+    // and gets rendered after the existing child rows instead of beside them.
+    const normalizedTasks = normalizeTimelineTasks(nextTasks);
     setTasks(normalizedTasks);
     window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
   };
@@ -770,6 +859,21 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     window.requestAnimationFrame(() => mindCanvasRef.current?.focus({ preventScroll: true }));
   }, [selectTask]);
 
+  const focusTaskTitle = (id: string) => {
+    let attempts = 0;
+    const focus = () => {
+      const input = mindCanvasRef.current?.querySelector<HTMLInputElement>(`input[data-task-title-id="${id}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 5) window.requestAnimationFrame(focus);
+    };
+    window.requestAnimationFrame(() => window.setTimeout(focus, 40));
+  };
+
   const updateTask = (id: string, patch: Partial<TaskNode>) => {
     persist(tasks.map((task) => task.id === id ? { ...task, ...patch } : task));
   };
@@ -812,6 +916,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
 
   const insertTask = (parent: TaskNode, options?: { title?: string; note?: string; select?: boolean }) => {
     const children = childrenByParent.get(parent.id) ?? [];
+    const nextLane = children.reduce((maxLane, child) => Math.max(maxLane, Math.round(child.lane)), -1) + 1;
     const startDay = clamp(parent.startDay + children.length * 4, parent.startDay, parent.endDay - minDuration);
     const next: TaskNode = {
       id: createId(),
@@ -820,12 +925,13 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       note: options?.note ?? "",
       startDay,
       endDay: clamp(startDay + 12, startDay + minDuration, parent.endDay),
-      lane: children.length,
+      lane: nextLane,
     };
     const nextTasks = [...tasks.map((task) => task.id === parent.id ? { ...task, collapsed: false } : task), next];
     persist(nextTasks);
     if (options?.select ?? true) selectTask(next.id);
     arrangeMindTree(nextTasks, next.id);
+    focusTaskTitle(next.id);
     return next;
   };
 
@@ -1010,10 +1116,39 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     });
   };
 
+  const beginTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !chartRef.current) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    timelinePanRef.current = { startX: event.clientX, startScrollLeft: chartRef.current.scrollLeft };
+    setIsTimelinePanning(true);
+  };
+
+  const moveTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = timelinePanRef.current;
+    if (!pan || !chartRef.current) return;
+    event.preventDefault();
+    chartRef.current.scrollLeft = pan.startScrollLeft - (event.clientX - pan.startX);
+  };
+
+  const endTimelinePan = () => {
+    if (!timelinePanRef.current) return;
+    timelinePanRef.current = null;
+    setIsTimelinePanning(false);
+  };
+
+  const getDropTarget = (clientY: number) => {
+    return ganttRows.find((candidate) => {
+      const rowTop = chartRef.current?.querySelector(`[data-task-row="${candidate.id}"]`)?.getBoundingClientRect().top ?? Number.NaN;
+      return Number.isFinite(rowTop) && clientY >= rowTop && clientY <= rowTop + ganttRowHeight;
+    });
+  };
+
   const beginDrag = (event: React.PointerEvent, task: TaskNode, mode: DragState["mode"]) => {
     if (mode !== "move") event.preventDefault();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     if (dragHoldTimerRef.current) window.clearTimeout(dragHoldTimerRef.current);
+    setTimelineDragPreview(null);
     dragRef.current = { id: task.id, mode, startX: event.clientX, startY: event.clientY, originalStart: task.startDay, originalEnd: task.endDay, originalLane: task.lane, activated: mode !== "move", changed: false };
     if (mode === "move") {
       dragHoldTimerRef.current = window.setTimeout(() => {
@@ -1037,7 +1172,6 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       setMessage(isEnglish ? "Dragging task. Release on a sibling row to link it." : "正在拖动任务条，松手到同级任务行可生成承接关系。");
     }
     const delta = Math.round((event.clientX - drag.startX) / timelineDayWidth);
-    const laneDelta = drag.mode === "move" ? Math.round((event.clientY - drag.startY) / ganttRowHeight) : 0;
     const currentTasks = latestTasksRef.current;
     const task = currentTasks.find((item) => item.id === drag.id);
     if (!task) return;
@@ -1054,10 +1188,20 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       const duration = drag.originalEnd - drag.originalStart;
       startDay = clamp(drag.originalStart + delta, minStart, maxEnd - duration);
       endDay = startDay + duration;
-      lane = Math.max(0, drag.originalLane + laneDelta);
+      const target = getDropTarget(event.clientY);
+      const validTarget = Boolean(target && target.id !== task.id && target.parentId === task.parentId);
+      setTimelineDragPreview({
+        id: task.id,
+        startDay,
+        endDay,
+        targetRowId: target?.id ?? task.id,
+        validTarget,
+      });
+      lane = validTarget && target ? target.lane : task.lane;
     }
     const changed = startDay !== task.startDay || endDay !== task.endDay || lane !== task.lane;
     if (changed) dragRef.current = { ...drag, changed: true };
+    if (drag.mode === "move") return;
     const nextTasks = includeAncestorRanges(currentTasks.map((item) => item.id === task.id ? { ...item, startDay, endDay, lane } : item));
     latestTasksRef.current = nextTasks;
     setTasks(nextTasks);
@@ -1073,7 +1217,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       const currentTasks = latestTasksRef.current;
       const task = currentTasks.find((item) => item.id === drag.id);
       let nextTasks = currentTasks;
-      if (event && task && drag.mode === "move" && Math.abs(event.clientY - drag.startY) > 18) {
+      if (event && task && drag.mode === "move" && Math.abs(event.clientY - drag.startY) > 18 && !timelineDragPreview) {
         const dropRowIndex = visibleTasks.findIndex((row) => {
           const rowTop = chartRef.current?.querySelector(`[data-task-row="${row.id}"]`)?.getBoundingClientRect().top ?? Number.NaN;
           return Number.isFinite(rowTop) && event.clientY >= rowTop && event.clientY <= rowTop + ganttRowHeight;
@@ -1088,11 +1232,23 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
           setMessage(isEnglish ? "Same-level tasks linked in sequence." : "已将同级任务拖入同一轨道，并生成承接关系。");
         }
       }
+      const preview = timelineDragPreview;
+      if (task && drag.mode === "move" && preview) {
+        const target = visibleTasks.find((row) => row.id === preview.targetRowId);
+        nextTasks = currentTasks.map((item) => item.id === task.id
+          ? { ...item, startDay: preview.startDay, endDay: preview.endDay, lane: preview.validTarget && target ? target.lane : item.lane }
+          : item);
+        if (preview.validTarget && target && target.parentId === task.parentId) {
+          nextTasks = applySequentialLaneDependencies(nextTasks, task.parentId, target.lane);
+          setMessage(isEnglish ? "Same-level tasks linked in sequence." : "已将同级任务拖入同一轨道，并生成承接关系。");
+        }
+      }
       const normalizedTasks = normalizeTimelineTasks(nextTasks);
       setTasks(normalizedTasks);
       window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
       const shouldOpenPopover = Boolean(event && task && drag.mode === "move" && !drag.activated && !drag.changed);
       dragRef.current = null;
+      setTimelineDragPreview(null);
       if (shouldOpenPopover && task && event) openTimelinePopover(event, task);
     }
   };
@@ -1906,16 +2062,30 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                 </label>
               </div>
 
-              <div className="task-gantt-scroll" ref={chartRef} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+              <div
+                className="task-gantt-scroll"
+                ref={chartRef}
+                style={{ overflowY: ganttNeedsVerticalScroll ? "auto" : "hidden" }}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              >
                 <div
                   className="task-gantt-grid"
                   style={{
                     width: trackViewportWidth,
                     minWidth: trackViewportWidth,
                     "--timeline-day-width": `${timelineDayWidth}px`,
+                    "--task-row-height": `${ganttRowHeight}px`,
                   } as CSSProperties}
                 >
-                  <div className="task-gantt-dates">
+                  <div
+                    className={`task-gantt-dates${isTimelinePanning ? " panning" : ""}`}
+                    onPointerDown={beginTimelinePan}
+                    onPointerMove={moveTimelinePan}
+                    onPointerUp={endTimelinePan}
+                    onPointerCancel={endTimelinePan}
+                  >
                     <div className="task-gantt-date-track" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, ${timelineDayWidth}px)` }}>
                       {timelineDays.map((day, index) => <b key={day}>{shouldShowTimelineTick(day, index, viewLength) ? formatTimelineTick(day, viewLength) : ""}</b>)}
                     </div>
@@ -1924,6 +2094,10 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                     const rowBars = visibleTasks
                       .filter((rowTask) => ganttLaneHostByTaskId.get(rowTask.id) === task.id)
                       .sort((a, b) => a.startDay - b.startDay || a.endDay - b.endDay);
+                    const previewTask = timelineDragPreview?.targetRowId === task.id
+                      ? tasks.find((candidate) => candidate.id === timelineDragPreview.id)
+                      : undefined;
+                    const previewBarTask = previewTask ? (rowBars.find((candidate) => candidate.id === previewTask.id) ?? { ...previewTask, depth: task.depth }) : undefined;
                     const rowSelected = task.id === selected.id || rowBars.some((rowTask) => rowTask.id === selected.id);
                     return (
                       <div className={`task-gantt-row${rowSelected ? " selected" : ""}`} key={task.id} data-task-row={task.id} style={{ minWidth: trackViewportWidth }}>
@@ -1936,8 +2110,10 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                             const linkLeft = Math.min(linkStart, linkEnd);
                             const linkWidth = Math.abs(linkEnd - linkStart);
                             const linkClipped = previousTask.endDay < viewStart || rowTask.startDay > viewEnd || linkWidth < 10;
+                            const hasExplicitDependency = rowTask.parentId === previousTask.parentId
+                              && rowTask.dependsOn?.includes(previousTask.id);
                             const color = taskBarColor(rowTask);
-                            if (linkClipped) return null;
+                            if (linkClipped || !hasExplicitDependency) return null;
                             return (
                               <span
                                 aria-hidden="true"
@@ -1952,6 +2128,19 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                               />
                             );
                           })}
+                          {previewBarTask && timelineDragPreview ? (
+                            <div
+                              className={`task-bar task-bar-ghost depth-${Math.min(previewBarTask.depth, 3)}${timelineDragPreview.validTarget ? "" : " invalid"}`}
+                              style={taskBarStyle(
+                                previewBarTask,
+                                (timelineDragPreview.startDay - viewStart) * timelineDayWidth,
+                                Math.max(18, (timelineDragPreview.endDay - timelineDragPreview.startDay + 1) * timelineDayWidth),
+                              )}
+                              aria-hidden="true"
+                            >
+                              <span>{previewBarTask.title}</span>
+                            </div>
+                          ) : null}
                           {rowBars.map((rowTask) => {
                             const left = (rowTask.startDay - viewStart) * timelineDayWidth;
                             const width = Math.max(18, (rowTask.endDay - rowTask.startDay + 1) * timelineDayWidth);
@@ -1959,7 +2148,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                             if (clipped) return null;
                             return (
                               <div
-                                className={`task-bar depth-${Math.min(rowTask.depth, 3)}${rowTask.id === root.id ? " root" : ""}`}
+                                className={`task-bar depth-${Math.min(rowTask.depth, 3)}${rowTask.id === root.id ? " root" : ""}${timelineDragPreview?.id === rowTask.id ? " dragging" : ""}`}
                                 key={rowTask.id}
                                 style={taskBarStyle(rowTask, left, width)}
                                 role="button"
@@ -1974,7 +2163,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                                 }}
                               >
                                 {rowTask.id === root.id ? null : <i className="task-bar-handle start" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "start"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
-                                <span>{rowTask.title}</span>
+                                <span onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "move"); }}>{rowTask.title}</span>
                                 {rowTask.id === root.id ? null : <i className="task-bar-handle end" onPointerDown={(event) => { event.stopPropagation(); beginDrag(event, rowTask, "end"); }} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} />}
                               </div>
                             );
