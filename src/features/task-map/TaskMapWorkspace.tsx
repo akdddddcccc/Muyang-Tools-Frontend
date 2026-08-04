@@ -387,6 +387,15 @@ function normalizeTimelineTasks(tasks: TaskNode[]) {
     const [parentKey, laneValue] = key.split(":");
     nextTasks = applySequentialLaneDependencies(nextTasks, parentKey === "__root__" ? undefined : parentKey, Number(laneValue));
   });
+  const root = nextTasks.find((task) => !task.parentId);
+  if (root) {
+    const descendants = getTaskDescendantIds(root.id, nextTasks);
+    const hasOutOfBoundsDescendant = nextTasks.some((task) => descendants.has(task.id)
+      && (task.startDay < root.startDay || task.endDay > root.endDay));
+    if (hasOutOfBoundsDescendant) {
+      nextTasks = resizeTaskSubtree(nextTasks, root.id, root.startDay, root.endDay);
+    }
+  }
   return includeAncestorRanges(nextTasks);
 }
 
@@ -471,9 +480,13 @@ function resizeTaskSubtree(tasks: TaskNode[], taskId: string, proposedStart: num
   if (!task) return tasks;
   const children = tasks.filter((candidate) => candidate.parentId === taskId);
   const parent = task.parentId ? tasks.find((candidate) => candidate.id === task.parentId) : undefined;
+  const root = tasks.find((candidate) => !candidate.parentId);
+  const isRoot = task.id === root?.id;
   const parentBounds = parent ? getTaskLaneBounds(parent, tasks) : { minStart: -36500, maxEnd: 36500 };
-  const nextStart = clamp(proposedStart, parentBounds.minStart, Math.min(proposedEnd - minDuration, parentBounds.maxEnd - minDuration));
-  const nextEnd = clamp(proposedEnd, nextStart + minDuration, parentBounds.maxEnd);
+  const minStart = isRoot ? parentBounds.minStart : Math.max(parentBounds.minStart, root?.startDay ?? -36500);
+  const maxEnd = isRoot ? parentBounds.maxEnd : Math.min(parentBounds.maxEnd, root?.endDay ?? 36500);
+  const nextStart = clamp(proposedStart, minStart, Math.min(proposedEnd - minDuration, maxEnd - minDuration));
+  const nextEnd = clamp(proposedEnd, nextStart + minDuration, maxEnd);
 
   if (!children.length) {
     if (!parent) return tasks.map((candidate) => candidate.id === taskId ? { ...candidate, startDay: nextStart, endDay: nextEnd } : candidate);
@@ -481,7 +494,9 @@ function resizeTaskSubtree(tasks: TaskNode[], taskId: string, proposedStart: num
     const childEnd = clamp(nextEnd, childStart + minDuration, parent.endDay);
     const expandedStart = Math.min(parent.startDay, nextStart);
     const expandedEnd = Math.max(parent.endDay, nextEnd);
-    const canExpand = expandedStart >= parentBounds.minStart && expandedEnd <= parentBounds.maxEnd;
+    const canExpand = parent.id !== root?.id
+      && expandedStart >= Math.max(parentBounds.minStart, root?.startDay ?? -36500)
+      && expandedEnd <= Math.min(parentBounds.maxEnd, root?.endDay ?? 36500);
     const finalParentStart = canExpand ? expandedStart : parent.startDay;
     const finalParentEnd = canExpand ? expandedEnd : parent.endDay;
     const finalChildStart = canExpand ? nextStart : clamp(childStart, finalParentStart, finalParentEnd - minDuration);
@@ -841,12 +856,18 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     setRootEndInput(formatDay(root.endDay));
   }, [root.id, root.endDay]);
 
-  const persist = (nextTasks: TaskNode[]) => {
+  const persist = (nextTasks: TaskNode[], options?: { preserveRootRange?: boolean }) => {
     // Keep lane slots canonical whenever the tree changes. A parent can be
     // moved to another visual track before its first child is created; if we
     // only expand ancestor dates here, the new child keeps a stale/sparse lane
     // and gets rendered after the existing child rows instead of beside them.
-    const normalizedTasks = normalizeTimelineTasks(nextTasks);
+    const currentRoot = tasks.find((task) => !task.parentId);
+    const nextRoot = nextTasks.find((task) => !task.parentId);
+    const preserveRootRange = options?.preserveRootRange !== false;
+    const boundedTasks = preserveRootRange && currentRoot && nextRoot && currentRoot.id === nextRoot.id
+      ? resizeTaskSubtree(nextTasks, nextRoot.id, currentRoot.startDay, currentRoot.endDay)
+      : nextTasks;
+    const normalizedTasks = normalizeTimelineTasks(boundedTasks);
     setTasks(normalizedTasks);
     window.localStorage.setItem(storageKey, JSON.stringify(normalizedTasks));
   };
@@ -1016,7 +1037,9 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
   };
 
   const updateTask = (id: string, patch: Partial<TaskNode>) => {
-    persist(tasks.map((task) => task.id === id ? { ...task, ...patch } : task));
+    const nextTasks = tasks.map((task) => task.id === id ? { ...task, ...patch } : task);
+    const isRootRangeEdit = id === root.id && (patch.startDay !== undefined || patch.endDay !== undefined);
+    persist(nextTasks, { preserveRootRange: !isRootRangeEdit });
   };
 
   const commitRootDateInput = (kind: "start" | "end") => {
@@ -1030,13 +1053,15 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
     if (kind === "start") {
       const nextStart = parsedDay;
       const nextEnd = nextStart > root.endDay - minDuration ? nextStart + minDuration : root.endDay;
-      updateTask(root.id, { startDay: nextStart, endDay: nextEnd });
+      persist(resizeTaskSubtree(tasks, root.id, nextStart, nextEnd), { preserveRootRange: false });
       setRootStartInput(formatDay(nextStart));
+      setMessage(isEnglish ? "Overall task moved; descendants were compressed into its range." : "总任务时间已修改，所有子任务已按比例压缩到总任务范围内。");
     } else {
       const nextEnd = parsedDay;
       const nextStart = nextEnd < root.startDay + minDuration ? nextEnd - minDuration : root.startDay;
-      updateTask(root.id, { startDay: nextStart, endDay: nextEnd });
+      persist(resizeTaskSubtree(tasks, root.id, nextStart, nextEnd), { preserveRootRange: false });
       setRootEndInput(formatDay(nextEnd));
+      setMessage(isEnglish ? "Overall task resized; descendants were compressed into its range." : "总任务时间已修改，所有子任务已按比例压缩到总任务范围内。");
     }
   };
 
@@ -1123,14 +1148,14 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
       collapsed: false,
       dependsOn: undefined,
     }];
-    persist(rootOnly);
+    persist(rootOnly, { preserveRootRange: false });
     setSelectedNodeIds([root.id]);
     setNodePositions((positions) => root.id in positions ? { [root.id]: positions[root.id] } : {});
     setMessage(isEnglish ? "Root goal initialized. Rename it directly on the node." : "已初始化总任务，请直接点击节点标题重命名。");
   };
 
   const resetProject = () => {
-    persist(seedTasks);
+    persist(seedTasks, { preserveRootRange: false });
     selectTask("goal");
     setViewStart(0);
     setViewLength(60);
@@ -2333,8 +2358,8 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                 </label>
                 <label className="task-root-date-field">
                   <span>
-                    <b>{isEnglish ? "Project start" : "项目开始"}</b>
-                    <em>{formatDay(root.startDay)}</em>
+                    <b>{isEnglish ? "Overall task start" : "总任务开始"}</b>
+                    <em>{isEnglish ? "Highest priority" : "最高级"}</em>
                   </span>
                   <input
                     type="text"
@@ -2344,13 +2369,13 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                     onChange={(event) => setRootStartInput(event.target.value)}
                     onBlur={() => commitRootDateInput("start")}
                     onKeyDown={(event) => handleRootDateKeyDown(event, "start")}
-                    aria-label={isEnglish ? "Project start date" : "项目开始日期"}
+                    aria-label={isEnglish ? "Overall task start date" : "总任务开始日期"}
                   />
                 </label>
                 <label className="task-root-date-field">
                   <span>
-                    <b>{isEnglish ? "Project end" : "项目结束"}</b>
-                    <em>{formatDay(root.endDay)}</em>
+                    <b>{isEnglish ? "Overall task end" : "总任务结束"}</b>
+                    <em>{isEnglish ? "Highest priority" : "最高级"}</em>
                   </span>
                   <input
                     type="text"
@@ -2360,7 +2385,7 @@ export function TaskMapWorkspace({ desktopMode = false, language, onLanguageChan
                     onChange={(event) => setRootEndInput(event.target.value)}
                     onBlur={() => commitRootDateInput("end")}
                     onKeyDown={(event) => handleRootDateKeyDown(event, "end")}
-                    aria-label={isEnglish ? "Project end date" : "项目结束日期"}
+                    aria-label={isEnglish ? "Overall task end date" : "总任务结束日期"}
                   />
                 </label>
               </div>
